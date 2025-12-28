@@ -7,7 +7,7 @@ import { useSupabase } from "@/lib/supabase-context"
 import type { Transaction } from "@/lib/types"
 import { motion, AnimatePresence } from "framer-motion"
 
-// --- STATUS CONFIG (Mantido igual) ---
+// --- STATUS CONFIG ---
 const statusConfig: Record<string, { label: string; color: string }> = {
   pending_receipt: { label: "Aguardando Comprovante", color: "bg-amber-500/20 text-amber-500" },
   pending_verification: { label: "Em Verificação", color: "bg-blue-500/20 text-blue-500" },
@@ -27,43 +27,112 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [uploadingId, setUploadingId] = useState<string | null>(null)
 
+  // ========================================
+  // CORREÇÃO PRINCIPAL PARA IPHONE
+  // ========================================
   const handleFileSelect = async (transactionId: string, event: React.ChangeEvent<HTMLInputElement>) => {
-    // 1. LIMPEZA DE ERROS ANTERIORES
     const file = event.target.files?.[0]
     if (!file) return
 
-    // 2. ALERTA: O iPhone detectou o arquivo?
-    // alert(`Etapa 1: Arquivo detectado no iOS!\nNome: ${file.name}\nTamanho: ${(file.size/1024).toFixed(0)}kb`)
+    console.log('📱 Arquivo selecionado:', {
+      name: file.name,
+      type: file.type,
+      size: file.size
+    })
 
     setUploadingId(transactionId)
 
     try {
-      // 3. ALERTA: Iniciando envio
-      // alert("Etapa 2: Enviando para o Supabase...")
-
-      // --- CORREÇÃO PRINCIPAL AQUI ---
-      // Antes você enviava 'url' (que era um texto blob:...).
-      // Agora enviamos 'file' (o arquivo binário real).
-      // Se a sua função uploadReceipt esperar uma URL, isso vai quebrar e precisamos ajustar o Contexto.
-      // Mas o padrão correto é enviar o File.
+      // PASSO 1: Converter HEIC para JPEG se necessário (iPhone usa HEIC)
+      let processedFile = file
       
-      await uploadReceipt(transactionId, file) // Mudei de 'url' para 'file'
+      // Se for HEIC ou imagem sem tipo definido, tentamos converter
+      if (file.type === 'image/heic' || file.type === 'image/heif' || file.type === '') {
+        console.log('🔄 Convertendo formato de imagem...')
+        processedFile = await convertToJpeg(file)
+      }
 
-      // 4. SUCESSO
-      alert("Sucesso! O comprovante foi enviado.")
+      // PASSO 2: Converter para Base64 (mais compatível com iOS)
+      const base64 = await fileToBase64(processedFile)
+      
+      console.log('✅ Arquivo processado, enviando...')
+
+      // PASSO 3: Enviar o arquivo processado
+      // Você pode enviar tanto o File quanto o Base64, dependendo da sua função uploadReceipt
+      await uploadReceipt(transactionId, processedFile)
+
+      alert("✅ Comprovante enviado com sucesso!")
       
     } catch (error: any) {
-      console.error("Erro detalhado:", error)
-      // 5. ERRO EXPLÍCITO
-      alert(`ERRO NO ENVIO:\n${error.message || JSON.stringify(error)}`)
+      console.error("❌ Erro detalhado:", error)
+      alert(`Erro ao enviar: ${error.message || 'Erro desconhecido'}`)
     } finally {
       setUploadingId(null)
-      // Limpa o input
       event.target.value = ""
     }
   }
 
-  // --- RENDERIZAÇÃO (Mantida igual, apenas o Input foi ajustado) ---
+  // Função auxiliar para converter arquivo para Base64
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const base64 = reader.result as string
+        resolve(base64)
+      }
+      reader.onerror = (error) => reject(error)
+      reader.readAsDataURL(file)
+    })
+  }
+
+  // Função auxiliar para converter HEIC/HEIF para JPEG
+  const convertToJpeg = async (file: File): Promise<File> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      
+      reader.onload = (e) => {
+        const img = new Image()
+        img.onload = () => {
+          // Criar canvas para conversão
+          const canvas = document.createElement('canvas')
+          canvas.width = img.width
+          canvas.height = img.height
+          
+          const ctx = canvas.getContext('2d')
+          if (!ctx) {
+            reject(new Error('Erro ao criar contexto do canvas'))
+            return
+          }
+          
+          // Desenhar imagem no canvas
+          ctx.drawImage(img, 0, 0)
+          
+          // Converter para Blob JPEG
+          canvas.toBlob((blob) => {
+            if (!blob) {
+              reject(new Error('Erro ao converter imagem'))
+              return
+            }
+            
+            // Criar novo File a partir do Blob
+            const newFile = new File([blob], file.name.replace(/\.[^/.]+$/, '.jpg'), {
+              type: 'image/jpeg',
+            })
+            
+            resolve(newFile)
+          }, 'image/jpeg', 0.9)
+        }
+        
+        img.onerror = () => reject(new Error('Erro ao carregar imagem'))
+        img.src = e.target?.result as string
+      }
+      
+      reader.onerror = () => reject(new Error('Erro ao ler arquivo'))
+      reader.readAsDataURL(file)
+    })
+  }
+
+  // --- RENDERIZAÇÃO ---
   if (transactions.length === 0) {
     return (
       <div className="py-12 text-center">
@@ -141,7 +210,7 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
                       </div>
                     </div>
 
-                    {/* Área de Upload */}
+                    {/* Área de Upload - CORRIGIDA PARA iOS */}
                     {tx.status === "pending_receipt" && (
                       <div className="space-y-3">
                         {tx.no_receipt_reason && (
@@ -152,23 +221,32 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
                           </div>
                         )}
 
-                        <div className="relative rounded-xl border-2 border-dashed border-amber-500/30 bg-amber-500/10 p-4">
-                          {/* INPUT DESTRAVADO (Opacidade 0 + Accept amplo) */}
+                        <label 
+                          htmlFor={`upload-${tx.id}`}
+                          className="relative block cursor-pointer rounded-xl border-2 border-dashed border-amber-500/30 bg-amber-500/10 p-4"
+                        >
+                          {/* INPUT COM CORREÇÕES PARA iOS */}
                           <input
                             type="file"
-                            accept="image/*, application/pdf"
+                            // CORREÇÃO: Accept mais específico para iOS
+                            accept="image/jpeg,image/jpg,image/png,image/heic,image/heif,application/pdf"
                             onChange={(e) => handleFileSelect(tx.id, e)}
                             className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
                             id={`upload-${tx.id}`}
                             disabled={uploadingId === tx.id}
+                            // CORREÇÃO: Remover capture para evitar problemas no iOS
+                            // capture="environment" <- REMOVER ISSO
                           />
-                          <div className="flex flex-col items-center gap-2">
+                          <div className="flex flex-col items-center gap-2 pointer-events-none">
                             <Upload className="h-6 w-6 text-amber-500" />
-                            <span className="text-sm text-amber-500">
-                              {uploadingId === tx.id ? "Enviando arquivo..." : "Clique para enviar o comprovante"}
+                            <span className="text-sm text-amber-500 text-center">
+                              {uploadingId === tx.id ? "Enviando arquivo..." : "Toque para enviar o comprovante"}
+                            </span>
+                            <span className="text-xs text-amber-500/60">
+                              Aceita: JPG, PNG, PDF
                             </span>
                           </div>
-                        </div>
+                        </label>
                       </div>
                     )}
 
