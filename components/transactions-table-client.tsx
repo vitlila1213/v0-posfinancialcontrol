@@ -7,7 +7,6 @@ import { useSupabase } from "@/lib/supabase-context"
 import type { Transaction } from "@/lib/types"
 import { motion, AnimatePresence } from "framer-motion"
 
-// --- STATUS CONFIG ---
 const statusConfig: Record<string, { label: string; color: string }> = {
   pending_receipt: { label: "Aguardando Comprovante", color: "bg-amber-500/20 text-amber-500" },
   pending_verification: { label: "Em Verificação", color: "bg-blue-500/20 text-blue-500" },
@@ -26,113 +25,84 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
   const { uploadReceipt } = useSupabase()
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [uploadingId, setUploadingId] = useState<string | null>(null)
+  const [debugInfo, setDebugInfo] = useState<string>("")
 
   // ========================================
-  // CORREÇÃO PRINCIPAL PARA IPHONE
+  // VERSÃO COM DEBUG COMPLETO PARA IPHONE
   // ========================================
   const handleFileSelect = async (transactionId: string, event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-
-    console.log('📱 Arquivo selecionado:', {
-      name: file.name,
-      type: file.type,
-      size: file.size
-    })
-
-    setUploadingId(transactionId)
-
     try {
-      // PASSO 1: Converter HEIC para JPEG se necessário (iPhone usa HEIC)
-      let processedFile = file
+      // CHECKPOINT 1
+      setDebugInfo("1️⃣ Função chamada")
+      await new Promise(resolve => setTimeout(resolve, 100))
+
+      const file = event.target.files?.[0]
       
-      // Se for HEIC ou imagem sem tipo definido, tentamos converter
-      if (file.type === 'image/heic' || file.type === 'image/heif' || file.type === '') {
-        console.log('🔄 Convertendo formato de imagem...')
-        processedFile = await convertToJpeg(file)
+      // CHECKPOINT 2
+      if (!file) {
+        setDebugInfo("❌ Nenhum arquivo detectado!")
+        alert("❌ ERRO: Nenhum arquivo foi selecionado")
+        return
       }
 
-      // PASSO 2: Converter para Base64 (mais compatível com iOS)
-      const base64 = await fileToBase64(processedFile)
-      
-      console.log('✅ Arquivo processado, enviando...')
+      setDebugInfo(`2️⃣ Arquivo detectado: ${file.name} (${(file.size/1024).toFixed(1)}KB)`)
+      await new Promise(resolve => setTimeout(resolve, 500))
 
-      // PASSO 3: Enviar o arquivo processado
-      // Você pode enviar tanto o File quanto o Base64, dependendo da sua função uploadReceipt
-      await uploadReceipt(transactionId, processedFile)
+      setUploadingId(transactionId)
 
+      // CHECKPOINT 3 - Ler o arquivo
+      setDebugInfo("3️⃣ Lendo arquivo...")
+      await new Promise(resolve => setTimeout(resolve, 100))
+
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => {
+          setDebugInfo("4️⃣ Arquivo lido com sucesso!")
+          resolve(reader.result as string)
+        }
+        reader.onerror = () => {
+          setDebugInfo("❌ Erro ao ler arquivo")
+          reject(new Error("Erro ao ler arquivo"))
+        }
+        reader.readAsDataURL(file)
+      })
+
+      await new Promise(resolve => setTimeout(resolve, 500))
+
+      // CHECKPOINT 4 - Enviar
+      setDebugInfo("5️⃣ Enviando para servidor...")
+      await new Promise(resolve => setTimeout(resolve, 100))
+
+      await uploadReceipt(transactionId, file)
+
+      // SUCESSO
+      setDebugInfo("✅ SUCESSO!")
       alert("✅ Comprovante enviado com sucesso!")
       
     } catch (error: any) {
-      console.error("❌ Erro detalhado:", error)
-      alert(`Erro ao enviar: ${error.message || 'Erro desconhecido'}`)
+      const errorMsg = error.message || JSON.stringify(error)
+      setDebugInfo(`❌ ERRO: ${errorMsg}`)
+      alert(`❌ ERRO: ${errorMsg}`)
+      console.error("Erro completo:", error)
     } finally {
       setUploadingId(null)
       event.target.value = ""
     }
   }
 
-  // Função auxiliar para converter arquivo para Base64
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => {
-        const base64 = reader.result as string
-        resolve(base64)
-      }
-      reader.onerror = (error) => reject(error)
-      reader.readAsDataURL(file)
-    })
+  // FUNÇÃO DE TESTE SIMPLIFICADA
+  const testImageSelection = async (transactionId: string) => {
+    alert("🧪 Iniciando teste de seleção de imagem...")
+    
+    const input = document.getElementById(`upload-${transactionId}`) as HTMLInputElement
+    if (!input) {
+      alert("❌ Input não encontrado!")
+      return
+    }
+    
+    input.click()
   }
 
-  // Função auxiliar para converter HEIC/HEIF para JPEG
-  const convertToJpeg = async (file: File): Promise<File> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      
-      reader.onload = (e) => {
-        const img = new Image()
-        img.onload = () => {
-          // Criar canvas para conversão
-          const canvas = document.createElement('canvas')
-          canvas.width = img.width
-          canvas.height = img.height
-          
-          const ctx = canvas.getContext('2d')
-          if (!ctx) {
-            reject(new Error('Erro ao criar contexto do canvas'))
-            return
-          }
-          
-          // Desenhar imagem no canvas
-          ctx.drawImage(img, 0, 0)
-          
-          // Converter para Blob JPEG
-          canvas.toBlob((blob) => {
-            if (!blob) {
-              reject(new Error('Erro ao converter imagem'))
-              return
-            }
-            
-            // Criar novo File a partir do Blob
-            const newFile = new File([blob], file.name.replace(/\.[^/.]+$/, '.jpg'), {
-              type: 'image/jpeg',
-            })
-            
-            resolve(newFile)
-          }, 'image/jpeg', 0.9)
-        }
-        
-        img.onerror = () => reject(new Error('Erro ao carregar imagem'))
-        img.src = e.target?.result as string
-      }
-      
-      reader.onerror = () => reject(new Error('Erro ao ler arquivo'))
-      reader.readAsDataURL(file)
-    })
-  }
-
-  // --- RENDERIZAÇÃO ---
   if (transactions.length === 0) {
     return (
       <div className="py-12 text-center">
@@ -186,7 +156,6 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
                   className="border-t border-white/5"
                 >
                   <div className="space-y-3 p-4">
-                    {/* Infos Financeiras */}
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <p className="text-xs text-muted-foreground">Valor Bruto</p>
@@ -210,7 +179,14 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
                       </div>
                     </div>
 
-                    {/* Área de Upload - CORRIGIDA PARA iOS */}
+                    {/* DEBUG INFO */}
+                    {debugInfo && uploadingId === tx.id && (
+                      <div className="rounded-lg bg-blue-500/10 p-3 border border-blue-500/30">
+                        <p className="text-sm text-blue-400 font-mono">{debugInfo}</p>
+                      </div>
+                    )}
+
+                    {/* UPLOAD AREA */}
                     {tx.status === "pending_receipt" && (
                       <div className="space-y-3">
                         {tx.no_receipt_reason && (
@@ -221,36 +197,35 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
                           </div>
                         )}
 
-                        <label 
-                          htmlFor={`upload-${tx.id}`}
-                          className="relative block cursor-pointer rounded-xl border-2 border-dashed border-amber-500/30 bg-amber-500/10 p-4"
+                        {/* BOTÃO VISÍVEL PARA TESTE */}
+                        <button
+                          onClick={() => testImageSelection(tx.id)}
+                          disabled={uploadingId === tx.id}
+                          className="w-full rounded-xl border-2 border-dashed border-amber-500/30 bg-amber-500/10 p-6 hover:bg-amber-500/20 transition-colors disabled:opacity-50"
                         >
-                          {/* INPUT COM CORREÇÕES PARA iOS */}
-                          <input
-                            type="file"
-                            // CORREÇÃO: Accept mais específico para iOS
-                            accept="image/jpeg,image/jpg,image/png,image/heic,image/heif,application/pdf"
-                            onChange={(e) => handleFileSelect(tx.id, e)}
-                            className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
-                            id={`upload-${tx.id}`}
-                            disabled={uploadingId === tx.id}
-                            // CORREÇÃO: Remover capture para evitar problemas no iOS
-                            // capture="environment" <- REMOVER ISSO
-                          />
-                          <div className="flex flex-col items-center gap-2 pointer-events-none">
-                            <Upload className="h-6 w-6 text-amber-500" />
-                            <span className="text-sm text-amber-500 text-center">
-                              {uploadingId === tx.id ? "Enviando arquivo..." : "Toque para enviar o comprovante"}
+                          <div className="flex flex-col items-center gap-2">
+                            <Upload className="h-8 w-8 text-amber-500" />
+                            <span className="text-base font-medium text-amber-500">
+                              {uploadingId === tx.id ? debugInfo : "Toque para enviar comprovante"}
                             </span>
                             <span className="text-xs text-amber-500/60">
-                              Aceita: JPG, PNG, PDF
+                              JPG, PNG ou PDF
                             </span>
                           </div>
-                        </label>
+                        </button>
+
+                        {/* INPUT OCULTO */}
+                        <input
+                          type="file"
+                          id={`upload-${tx.id}`}
+                          accept="image/*,application/pdf"
+                          onChange={(e) => handleFileSelect(tx.id, e)}
+                          className="hidden"
+                          disabled={uploadingId === tx.id}
+                        />
                       </div>
                     )}
 
-                    {/* Link do Comprovante */}
                     {tx.receipt_url && (
                       <div className="flex items-center gap-2 rounded-lg bg-white/5 p-3">
                         <FileText className="h-5 w-5 text-emerald-500" />
@@ -267,7 +242,6 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
                       </div>
                     )}
 
-                    {/* Rejeição */}
                     {tx.status === "rejected" && tx.rejection_reason && (
                       <div className="rounded-lg bg-rose-500/10 p-3">
                         <p className="text-sm text-rose-400">
@@ -276,7 +250,6 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
                       </div>
                     )}
 
-                    {/* Botão de Estorno */}
                     {!tx.is_chargeback && onChargeback && (
                       <button
                         onClick={(e) => {
@@ -290,7 +263,6 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
                       </button>
                     )}
 
-                    {/* Motivo do Estorno */}
                     {tx.is_chargeback && tx.chargeback_reason && (
                       <div className="rounded-lg bg-red-500/10 p-3">
                         <p className="text-sm text-red-400">
