@@ -1,0 +1,840 @@
+"use client"
+
+import { useState, useEffect } from "react"
+import {
+  Search,
+  Wallet,
+  Clock,
+  TrendingUp,
+  User,
+  X,
+  Crown,
+  Check,
+  AlertCircle,
+  Download,
+  Calendar,
+  DollarSign,
+} from "lucide-react"
+import { useSupabase } from "@/lib/supabase-context"
+import { GlassCard } from "@/components/glass-card"
+import { Input } from "@/components/ui/input"
+import { AnimatedNumber } from "@/components/animated-number"
+import { formatCurrency, PLAN_NAMES, type PlanType } from "@/lib/pos-rates"
+import { motion, AnimatePresence } from "framer-motion"
+import type { Profile, Transaction } from "@/lib/types"
+import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
+import { Calendar as CalendarComponent } from "@/components/ui/calendar"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { format } from "date-fns"
+import { ptBR } from "date-fns/locale"
+import jsPDF from "jspdf"
+import autoTable from "jspdf-autotable"
+import { BalanceAdjustmentModal } from "@/components/balance-adjustment-modal"
+
+export default function AdminClientesPage() {
+  const { clients, transactions, getClientBalances, assignClientPlan, isLoading } = useSupabase()
+  const [search, setSearch] = useState("")
+  const [selectedClient, setSelectedClient] = useState<Profile | null>(null)
+  const [adjustmentClient, setAdjustmentClient] = useState<Profile | null>(null)
+  const [planModalClient, setPlanModalClient] = useState<Profile | null>(null)
+  const [selectedPlan, setSelectedPlan] = useState<PlanType>(null)
+  const [isAssigning, setIsAssigning] = useState(false)
+  const [assignError, setAssignError] = useState<string | null>(null)
+  const [dateRange, setDateRange] = useState({ from: undefined, to: undefined })
+
+  useEffect(() => {
+    if (selectedClient || planModalClient) {
+      document.body.style.overflow = "hidden"
+    } else {
+      document.body.style.overflow = "unset"
+    }
+    return () => {
+      document.body.style.overflow = "unset"
+    }
+  }, [selectedClient, planModalClient])
+
+  console.log(
+    "[v0] Clientes carregados:",
+    clients.map((c) => ({ id: c.id, name: c.full_name, plan: c.plan })),
+  )
+
+  if (isLoading) {
+    return (
+      <div className="flex h-96 items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-amber-500 border-t-transparent" />
+      </div>
+    )
+  }
+
+  const filteredClients = clients.filter((c) => {
+    if (!search) return true
+    const searchLower = search.toLowerCase()
+    return c.full_name?.toLowerCase().includes(searchLower) || c.email.toLowerCase().includes(searchLower)
+  })
+
+  // Separar clientes por status de plano
+  const clientsWithoutPlan = filteredClients.filter((c) => !c.plan)
+  const clientsWithPlan = filteredClients.filter((c) => c.plan)
+
+  const getClientTransactions = (userId: string): Transaction[] => {
+    return transactions.filter((t) => t.user_id === userId)
+  }
+
+  const getFilteredTransactions = (userId: string): Transaction[] => {
+    let filtered = transactions.filter((t) => t.user_id === userId)
+
+    if (dateRange.from) {
+      filtered = filtered.filter((t) => new Date(t.created_at) >= dateRange.from)
+    }
+
+    if (dateRange.to) {
+      const endOfDay = new Date(dateRange.to)
+      endOfDay.setHours(23, 59, 59, 999)
+      filtered = filtered.filter((t) => new Date(t.created_at) <= endOfDay)
+    }
+
+    return filtered.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  }
+
+  const downloadExtract = () => {
+    if (!selectedClient) return
+
+    const filteredTx = getFilteredTransactions(selectedClient.id)
+
+    if (filteredTx.length === 0) {
+      alert("Nenhuma transação encontrada no período selecionado")
+      return
+    }
+
+    // Criar PDF
+    const doc = new jsPDF()
+
+    // Adicionar logo (base64 da logo PagNextLevel)
+    const logoBase64 =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" // Placeholder - será substituído pela logo real
+
+    try {
+      doc.addImage("/images/whatsapp-20image-202025-12-10-20at-2011.png", "PNG", 15, 10, 40, 12)
+    } catch (e) {
+      // Se falhar, apenas continua sem logo
+    }
+
+    // Título
+    doc.setFontSize(20)
+    doc.setTextColor(139, 92, 246) // Roxo da marca
+    doc.text("Extrato de Transações", 15, 35)
+
+    // Informações do cliente
+    doc.setFontSize(11)
+    doc.setTextColor(100, 100, 100)
+    doc.text(`Cliente: ${selectedClient.full_name || selectedClient.email}`, 15, 45)
+    doc.text(
+      `Período: ${format(dateRange.from || new Date(), "dd/MM/yyyy")} a ${format(dateRange.to || new Date(), "dd/MM/yyyy")}`,
+      15,
+      52,
+    )
+    doc.text(`Data de Emissão: ${format(new Date(), "dd/MM/yyyy HH:mm")}`, 15, 59)
+
+    // Linha separadora
+    doc.setDrawColor(200, 200, 200)
+    doc.line(15, 65, 195, 65)
+
+    // Preparar dados da tabela
+    const tableData = filteredTx.map((tx) => [
+      format(new Date(tx.created_at), "dd/MM/yyyy", { locale: ptBR }),
+      `R$ ${tx.gross_value.toFixed(2)}`,
+      `R$ ${tx.net_value.toFixed(2)}`,
+      `R$ ${tx.fee_value.toFixed(2)}`,
+      tx.brand === "visa_master" ? "Visa/Master" : tx.brand === "elo_amex" ? "Elo/Amex" : "PIX",
+      tx.payment_type === "debit"
+        ? "Débito"
+        : tx.payment_type === "credit"
+          ? "Crédito"
+          : tx.payment_type === "pix_account"
+            ? "PIX Conta"
+            : tx.payment_type === "pix_qrcode"
+              ? "PIX QR"
+              : tx.payment_type,
+      tx.installments?.toString() || "1",
+      tx.status === "verified"
+        ? "Verificado"
+        : tx.status === "pending_receipt"
+          ? "Pend. Comp."
+          : tx.status === "pending_verification"
+            ? "Pend. Verif."
+            : tx.status === "paid"
+              ? "Pago"
+              : "Rejeitado",
+    ])
+
+    // Calcular totais
+    const totalGross = filteredTx.reduce((sum, tx) => sum + tx.gross_value, 0)
+    const totalNet = filteredTx.reduce((sum, tx) => sum + tx.net_value, 0)
+    const totalFees = filteredTx.reduce((sum, tx) => sum + tx.fee_value, 0)
+
+    // Adicionar tabela usando autoTable
+    autoTable(doc, {
+      startY: 70,
+      head: [["Data", "Valor Bruto", "Valor Líquido", "Taxa", "Bandeira", "Tipo", "Parc.", "Status"]],
+      body: tableData,
+      foot: [
+        [
+          "TOTAIS",
+          `R$ ${totalGross.toFixed(2)}`,
+          `R$ ${totalNet.toFixed(2)}`,
+          `R$ ${totalFees.toFixed(2)}`,
+          "",
+          "",
+          "",
+          "",
+        ],
+      ],
+      theme: "grid",
+      headStyles: {
+        fillColor: [139, 92, 246], // Roxo da marca
+        textColor: 255,
+        fontSize: 9,
+        fontStyle: "bold",
+      },
+      bodyStyles: {
+        fontSize: 8,
+        textColor: [60, 60, 60],
+      },
+      footStyles: {
+        fillColor: [240, 240, 240],
+        textColor: [60, 60, 60],
+        fontSize: 9,
+        fontStyle: "bold",
+      },
+      alternateRowStyles: {
+        fillColor: [250, 250, 250],
+      },
+      margin: { left: 15, right: 15 },
+    })
+
+    // Rodapé
+    const pageCount = doc.getNumberOfPages()
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i)
+      doc.setFontSize(8)
+      doc.setTextColor(150, 150, 150)
+      doc.text(
+        `PagNextLevel - Gestão Financeira | Página ${i} de ${pageCount}`,
+        doc.internal.pageSize.width / 2,
+        doc.internal.pageSize.height - 10,
+        { align: "center" },
+      )
+    }
+
+    // Download
+    doc.save(
+      `extrato_${selectedClient.full_name?.replace(/\s+/g, "_") || "cliente"}_${format(new Date(), "dd-MM-yyyy")}.pdf`,
+    )
+  }
+
+  const handleAssignPlan = async () => {
+    if (!planModalClient || !selectedPlan) return
+    setIsAssigning(true)
+    setAssignError(null)
+
+    console.log("[v0] Iniciando atribuição de plano:", { clientId: planModalClient.id, plan: selectedPlan })
+
+    try {
+      await assignClientPlan(planModalClient.id, selectedPlan)
+      console.log("[v0] Plano atribuído com sucesso!")
+      setPlanModalClient(null)
+      setSelectedPlan(null)
+    } catch (error) {
+      console.error("[v0] Erro ao atribuir plano:", error)
+      setAssignError(error instanceof Error ? error.message : "Erro ao atribuir plano")
+    } finally {
+      setIsAssigning(false)
+    }
+  }
+
+  const openPlanModal = (client: Profile) => {
+    setPlanModalClient(client)
+    setSelectedPlan(client.plan)
+    setAssignError(null)
+  }
+
+  const getPlanBadgeColor = (plan: PlanType) => {
+    switch (plan) {
+      case "top":
+        return "bg-emerald-500/20 text-emerald-500 border-emerald-500/30"
+      case "intermediario":
+        return "bg-blue-500/20 text-blue-500 border-blue-500/30"
+      case "basico":
+        return "bg-amber-500/20 text-amber-500 border-amber-500/30"
+      default:
+        return "bg-rose-500/20 text-rose-500 border-rose-500/30"
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-xl font-bold text-foreground sm:text-2xl">Clientes</h1>
+        <p className="text-sm text-muted-foreground">Gerencie os clientes e atribua planos</p>
+      </div>
+
+      {/* Clientes sem plano */}
+      {clientsWithoutPlan.length > 0 && (
+        <GlassCard className="border-amber-500/30 p-4 sm:p-6">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/20">
+              <AlertCircle className="h-5 w-5 text-amber-500" />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-foreground sm:text-lg">
+                Aguardando Atribuição de Plano ({clientsWithoutPlan.length})
+              </h3>
+              <p className="text-xs text-muted-foreground sm:text-sm">
+                Estes clientes precisam de um plano para começar a usar o sistema
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {clientsWithoutPlan.map((client) => (
+              <div
+                key={client.id}
+                className="flex flex-col gap-4 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-500/20 text-amber-500">
+                    {client.full_name?.[0]?.toUpperCase() || "C"}
+                  </div>
+                  <div>
+                    <p className="font-medium text-foreground">{client.full_name || "Sem nome"}</p>
+                    <p className="text-xs text-muted-foreground">{client.email}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full border border-rose-500/30 bg-rose-500/20 px-3 py-1 text-xs font-medium text-rose-500">
+                    Sem Plano
+                  </span>
+                  <Button
+                    onClick={() => openPlanModal(client)}
+                    className="bg-amber-500 text-white hover:bg-amber-600"
+                    size="sm"
+                  >
+                    <Crown className="mr-2 h-4 w-4" />
+                    Atribuir Plano
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </GlassCard>
+      )}
+
+      {/* Todos os clientes */}
+      <GlassCard className="p-4 sm:p-6">
+        <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <h3 className="text-base font-semibold text-foreground sm:text-lg">
+            Clientes Ativos ({clientsWithPlan.length})
+          </h3>
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Buscar cliente..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="border-white/10 bg-white/5 pl-9"
+            />
+          </div>
+        </div>
+
+        {clientsWithPlan.length === 0 ? (
+          <div className="py-12 text-center">
+            <User className="mx-auto mb-3 h-12 w-12 text-muted-foreground/50" />
+            <p className="text-muted-foreground">Nenhum cliente com plano ativo</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {clientsWithPlan.map((client) => {
+              const balances = getClientBalances(client.id)
+              const clientTx = getClientTransactions(client.id)
+              const pendingReceipts = clientTx.filter(
+                (t) => t.status === "pending_receipt" || t.status === "pending_verification",
+              ).length
+
+              return (
+                <div
+                  key={client.id}
+                  className="flex flex-col gap-4 rounded-xl border border-white/5 bg-white/5 p-4 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-500">
+                      {client.full_name?.[0]?.toUpperCase() || "C"}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-foreground">{client.full_name || "Sem nome"}</p>
+                        <span
+                          className={cn(
+                            "rounded-full border px-2 py-0.5 text-xs font-medium",
+                            getPlanBadgeColor(client.plan),
+                          )}
+                        >
+                          {client.plan ? PLAN_NAMES[client.plan] : "Sem Plano"}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{client.email}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-4 text-center sm:flex sm:gap-6">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Disponível</p>
+                      <p className="text-sm font-semibold text-emerald-500">{formatCurrency(balances.available)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Pendente</p>
+                      <p className="text-sm font-semibold text-amber-500">{formatCurrency(balances.pending)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Comprov.</p>
+                      <p className="text-sm font-semibold text-rose-500">{pendingReceipts}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => openPlanModal(client)}
+                      className="flex items-center justify-center gap-2 rounded-lg bg-white/5 px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
+                    >
+                      <Crown className="h-4 w-4" />
+                      Plano
+                    </Button>
+                    <Button
+                      onClick={() => setAdjustmentClient(client)}
+                      variant="outline"
+                      size="sm"
+                      className="border-white/10 bg-white/5"
+                    >
+                      <DollarSign className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      onClick={() => setSelectedClient(client)}
+                      variant="outline"
+                      size="sm"
+                      className="border-white/10 bg-white/5"
+                    >
+                      Ver Painel
+                    </Button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </GlassCard>
+
+      {/* Balance Adjustment Modal */}
+      {adjustmentClient && (
+        <BalanceAdjustmentModal client={adjustmentClient} onClose={() => setAdjustmentClient(null)} />
+      )}
+
+      {/* Plan Assignment Modal */}
+      <AnimatePresence>
+        {planModalClient && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm"
+            />
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl border border-white/10 bg-slate-900/95 p-6 backdrop-blur-xl pointer-events-auto"
+              >
+                <div className="mb-6 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/20">
+                      <Crown className="h-5 w-5 text-amber-500" />
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-bold text-foreground">Atribuir Plano</h2>
+                      <p className="text-sm text-muted-foreground">
+                        {planModalClient.full_name || planModalClient.email}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setPlanModalClient(null)}
+                    className="rounded-lg p-2 text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                {assignError && (
+                  <div className="mb-4 rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-500">
+                    {assignError}
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  {/* Plano Master */}
+                  <button
+                    onClick={() => setSelectedPlan("top")}
+                    className={cn(
+                      "w-full rounded-xl border p-4 text-left transition-all",
+                      selectedPlan === "top"
+                        ? "border-emerald-500 bg-emerald-500/10"
+                        : "border-white/10 bg-white/5 hover:border-white/20",
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <Crown className="h-5 w-5 text-emerald-500" />
+                          <span className="font-semibold text-foreground">Plano Master</span>
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">Melhores taxas - Débito Visa/Master: 1,99%</p>
+                      </div>
+                      {selectedPlan === "top" && <Check className="h-5 w-5 text-emerald-500" />}
+                    </div>
+                  </button>
+
+                  {/* Plano Intermediário */}
+                  <button
+                    onClick={() => setSelectedPlan("intermediario")}
+                    className={cn(
+                      "w-full rounded-xl border p-4 text-left transition-all",
+                      selectedPlan === "intermediario"
+                        ? "border-blue-500 bg-blue-500/10"
+                        : "border-white/10 bg-white/5 hover:border-white/20",
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <Crown className="h-5 w-5 text-blue-500" />
+                          <span className="font-semibold text-foreground">Plano Intermediário</span>
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Taxas balanceadas - Débito Visa/Master: 2,29%
+                        </p>
+                      </div>
+                      {selectedPlan === "intermediario" && <Check className="h-5 w-5 text-blue-500" />}
+                    </div>
+                  </button>
+
+                  {/* Plano Básico */}
+                  <button
+                    onClick={() => setSelectedPlan("basico")}
+                    className={cn(
+                      "w-full rounded-xl border p-4 text-left transition-all",
+                      selectedPlan === "basico"
+                        ? "border-amber-500 bg-amber-500/10"
+                        : "border-white/10 bg-white/5 hover:border-white/20",
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <Crown className="h-5 w-5 text-amber-500" />
+                          <span className="font-semibold text-foreground">Plano Básico</span>
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">Taxas padrão - Débito Visa/Master: 3,30%</p>
+                      </div>
+                      {selectedPlan === "basico" && <Check className="h-5 w-5 text-amber-500" />}
+                    </div>
+                  </button>
+                </div>
+
+                <div className="mt-6 flex gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={() => setPlanModalClient(null)}
+                    className="flex-1 border-white/10 bg-white/5"
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    onClick={handleAssignPlan}
+                    disabled={!selectedPlan || isAssigning}
+                    className="flex-1 bg-emerald-500 text-white hover:bg-emerald-600"
+                  >
+                    {isAssigning ? "Salvando..." : "Confirmar Plano"}
+                  </Button>
+                </div>
+              </motion.div>
+            </div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Client Panel Modal */}
+      <AnimatePresence>
+        {selectedClient && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm"
+            />
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                onClick={(e) => e.stopPropagation()}
+                className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-white/10 bg-slate-900/95 p-6 backdrop-blur-xl pointer-events-auto"
+              >
+                <div className="mb-6 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/20 text-lg font-bold text-emerald-500">
+                      {selectedClient.full_name?.[0]?.toUpperCase() || "C"}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-lg font-bold text-foreground">{selectedClient.full_name || "Sem nome"}</h2>
+                        <span
+                          className={cn(
+                            "rounded-full border px-2 py-0.5 text-xs font-medium",
+                            getPlanBadgeColor(selectedClient.plan),
+                          )}
+                        >
+                          {selectedClient.plan ? PLAN_NAMES[selectedClient.plan] : "Sem Plano"}
+                        </span>
+                      </div>
+                      <p className="text-sm text-muted-foreground">{selectedClient.email}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSelectedClient(null)
+                      setDateRange({ from: undefined, to: undefined })
+                    }}
+                    className="rounded-lg p-2 text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                {(() => {
+                  const balances = getClientBalances(selectedClient.id)
+                  const clientTx = getClientTransactions(selectedClient.id)
+                  const filteredTx = getFilteredTransactions(selectedClient.id)
+                  const pendingTx = clientTx.filter(
+                    (t) => t.status === "pending_receipt" || t.status === "pending_verification",
+                  )
+
+                  return (
+                    <>
+                      {/* Balance Cards */}
+                      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                        <div className="rounded-xl bg-emerald-500/10 p-4">
+                          <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/20">
+                            <Wallet className="h-4 w-4 text-emerald-500" />
+                          </div>
+                          <p className="text-xs text-muted-foreground">Disponível</p>
+                          <p className="text-lg font-bold text-emerald-500">
+                            <AnimatedNumber value={balances.available} />
+                          </p>
+                        </div>
+
+                        <div className="rounded-xl bg-amber-500/10 p-4">
+                          <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/20">
+                            <Clock className="h-4 w-4 text-amber-500" />
+                          </div>
+                          <p className="text-xs text-muted-foreground">Pendente</p>
+                          <p className="text-lg font-bold text-amber-500">
+                            <AnimatedNumber value={balances.pending} />
+                          </p>
+                        </div>
+
+                        <div className="rounded-xl bg-blue-500/10 p-4">
+                          <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/20">
+                            <TrendingUp className="h-4 w-4 text-blue-500" />
+                          </div>
+                          <p className="text-xs text-muted-foreground">Volume</p>
+                          <p className="text-lg font-bold text-blue-500">
+                            <AnimatedNumber value={balances.total} />
+                          </p>
+                        </div>
+
+                        <div className="rounded-xl bg-rose-500/10 p-4">
+                          <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-rose-500/20">
+                            <Wallet className="h-4 w-4 text-rose-500" />
+                          </div>
+                          <p className="text-xs text-muted-foreground">Sacado</p>
+                          <p className="text-lg font-bold text-rose-500">
+                            <AnimatedNumber value={balances.withdrawn} />
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button variant="outline" className="h-9 border-white/10 bg-white/5 text-xs">
+                                <Calendar className="mr-2 h-4 w-4" />
+                                {dateRange.from
+                                  ? format(dateRange.from, "dd/MM/yyyy", { locale: ptBR })
+                                  : "Data Inicial"}
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="start">
+                              <CalendarComponent
+                                mode="single"
+                                selected={dateRange.from}
+                                onSelect={(date) => setDateRange({ ...dateRange, from: date })}
+                                initialFocus
+                                locale={ptBR}
+                              />
+                            </PopoverContent>
+                          </Popover>
+
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button variant="outline" className="h-9 border-white/10 bg-white/5 text-xs">
+                                <Calendar className="mr-2 h-4 w-4" />
+                                {dateRange.to ? format(dateRange.to, "dd/MM/yyyy", { locale: ptBR }) : "Data Final"}
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="start">
+                              <CalendarComponent
+                                mode="single"
+                                selected={dateRange.to}
+                                onSelect={(date) => setDateRange({ ...dateRange, to: date })}
+                                initialFocus
+                                locale={ptBR}
+                              />
+                            </PopoverContent>
+                          </Popover>
+
+                          {(dateRange.from || dateRange.to) && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setDateRange({ from: undefined, to: undefined })}
+                              className="h-9 text-xs text-muted-foreground"
+                            >
+                              Limpar
+                            </Button>
+                          )}
+                        </div>
+
+                        <Button
+                          onClick={downloadExtract}
+                          className="h-9 bg-emerald-500 text-xs text-white hover:bg-emerald-600"
+                        >
+                          <Download className="mr-2 h-4 w-4" />
+                          Baixar Extrato
+                        </Button>
+                      </div>
+
+                      {/* Transactions List */}
+                      <div>
+                        <h3 className="mb-3 text-sm font-semibold text-foreground">Transações ({filteredTx.length})</h3>
+                        {filteredTx.length > 0 ? (
+                          <div className="space-y-2 max-h-96 overflow-y-auto">
+                            {filteredTx.map((tx) => (
+                              <div
+                                key={tx.id}
+                                className="flex flex-col gap-2 rounded-lg bg-white/5 p-3 sm:flex-row sm:items-center sm:justify-between"
+                              >
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <p className="text-sm font-medium text-foreground">
+                                      {formatCurrency(tx.gross_value)}
+                                    </p>
+                                    <span className="text-xs text-muted-foreground">→</span>
+                                    <p className="text-sm font-medium text-emerald-500">
+                                      {formatCurrency(tx.net_value)}
+                                    </p>
+                                  </div>
+                                  <p className="text-xs text-muted-foreground">
+                                    {tx.brand === "visa_master"
+                                      ? "Visa/Master"
+                                      : tx.brand === "elo_amex"
+                                        ? "Elo/Amex"
+                                        : "PIX"}{" "}
+                                    -{" "}
+                                    {tx.payment_type === "debit"
+                                      ? "Débito"
+                                      : tx.payment_type === "credit"
+                                        ? `Crédito ${tx.installments}x`
+                                        : tx.payment_type === "pix_account"
+                                          ? "PIX Conta"
+                                          : "PIX QR Code"}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {format(new Date(tx.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                                  </p>
+                                </div>
+                                <span
+                                  className={cn(
+                                    "rounded-full px-2 py-1 text-xs font-medium whitespace-nowrap",
+                                    tx.status === "verified" && "bg-emerald-500/20 text-emerald-500",
+                                    tx.status === "pending_receipt" && "bg-amber-500/20 text-amber-500",
+                                    tx.status === "pending_verification" && "bg-blue-500/20 text-blue-500",
+                                    tx.status === "paid" && "bg-purple-500/20 text-purple-500",
+                                    tx.status === "rejected" && "bg-rose-500/20 text-rose-500",
+                                  )}
+                                >
+                                  {tx.status === "verified" && "Verificado"}
+                                  {tx.status === "pending_receipt" && "Aguardando Comprovante"}
+                                  {tx.status === "pending_verification" && "Aguardando Verificação"}
+                                  {tx.status === "paid" && "Pago"}
+                                  {tx.status === "rejected" && "Rejeitado"}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="py-8 text-center">
+                            <p className="text-muted-foreground">
+                              {dateRange.from || dateRange.to
+                                ? "Nenhuma transação encontrada no período selecionado"
+                                : "Nenhuma transação para este cliente"}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Pending Transactions Summary */}
+                      {pendingTx.length > 0 && (
+                        <div className="mt-6 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
+                          <div className="flex items-start gap-3">
+                            <AlertCircle className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                            <div>
+                              <p className="text-sm font-semibold text-amber-500">
+                                {pendingTx.length} transação{pendingTx.length > 1 ? "ões" : ""} pendente
+                                {pendingTx.length > 1 ? "s" : ""}
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Aguardando {pendingTx.filter((t) => t.status === "pending_receipt").length} comprovante
+                                {pendingTx.filter((t) => t.status === "pending_receipt").length !== 1 ? "s" : ""} e{" "}
+                                {pendingTx.filter((t) => t.status === "pending_verification").length} verificação
+                                {pendingTx.filter((t) => t.status === "pending_verification").length !== 1 ? "ões" : ""}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )
+                })()}
+              </motion.div>
+            </div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}

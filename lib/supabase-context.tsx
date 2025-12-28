@@ -1,0 +1,750 @@
+"use client"
+
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, type ReactNode } from "react"
+import { createClient } from "@/lib/supabase/client"
+import type { User } from "@supabase/supabase-js"
+import type {
+  Transaction,
+  Withdrawal,
+  Profile,
+  Notification,
+  ClientBalances,
+  PlanType,
+  BalanceAdjustment,
+  AdjustmentType,
+  WithdrawalMethod,
+  PixKeyType,
+} from "@/lib/types"
+import { calculateFee, type BrandGroup, type Installments } from "@/lib/pos-rates"
+
+interface SupabaseContextType {
+  user: User | null
+  profile: Profile | null
+  isLoading: boolean
+  transactions: Transaction[]
+  withdrawals: Withdrawal[]
+  notifications: Notification[]
+  clients: Profile[]
+  balanceAdjustments: BalanceAdjustment[]
+  // Transaction actions
+  addTransaction: (data: {
+    grossValue: number
+    brand: string
+    paymentType: string
+    installments: number
+    receiptUrl?: string
+    noReceiptReason?: string
+  }) => Promise<void>
+  updateTransaction: (id: string, updates: Partial<Transaction>) => Promise<void>
+  uploadReceipt: (transactionId: string, receiptUrl: string) => Promise<void>
+  verifyTransaction: (transactionId: string, approved: boolean, reason?: string) => Promise<void>
+  // Withdrawal actions
+  requestWithdrawal: (data: {
+    amount: number
+    method: WithdrawalMethod
+    pixKey?: string
+    pixKeyType?: PixKeyType
+    pixOwnerName?: string
+    bankName?: string
+    bankAgency?: string
+    bankAccount?: string
+    boletoName?: string
+    boletoBeneficiaryName?: string
+    boletoNumber?: string
+    boletoValue?: number
+    boletoOrigin?: string
+  }) => Promise<void>
+  payWithdrawal: (withdrawalId: string, proofUrl: string) => Promise<void>
+  cancelWithdrawal: (withdrawalId: string, reason: string) => Promise<void>
+  // Notification actions
+  markNotificationRead: (id: string) => Promise<void>
+  markAllNotificationsRead: () => Promise<void>
+  // Balance calculation
+  getClientBalances: (userId: string) => ClientBalances
+  // Profile actions
+  updateProfile: (updates: Partial<Profile>) => Promise<void>
+  assignClientPlan: (clientId: string, plan: PlanType) => Promise<void>
+  // Balance adjustment actions
+  addBalanceAdjustment: (userId: string, type: AdjustmentType, amount: number, reason: string) => Promise<void>
+  // Chargeback actions
+  registerChargeback: (transactionId: string, reason: string) => Promise<void>
+  // Transaction approval actions
+  approveWithoutReceipt: (transactionId: string) => Promise<void>
+  // Refresh data
+  refreshData: () => Promise<void>
+  // Logout
+  logout: () => Promise<void>
+}
+
+const SupabaseContext = createContext<SupabaseContextType | null>(null)
+
+export function SupabaseProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<User | null>(null)
+  const [profile, setProfile] = useState<Profile | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([])
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [clients, setClients] = useState<Profile[]>([])
+  const [balanceAdjustments, setBalanceAdjustments] = useState<BalanceAdjustment[]>([])
+
+  const supabase = createClient()
+
+  const fetchUserData = useCallback(async () => {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+
+      if (!user) {
+        setUser(null)
+        setProfile(null)
+        setIsLoading(false)
+        return
+      }
+
+      setUser(user)
+
+      // Buscar perfil
+      const { data: profileData } = await supabase.from("profiles").select("*").eq("id", user.id).single()
+
+      if (profileData) {
+        setProfile(profileData as Profile)
+      }
+
+      // Buscar transações
+      if (profileData?.role === "admin") {
+        const { data: txData } = await supabase
+          .from("transactions")
+          .select("*")
+          .eq("is_chargeback", false)
+          .order("created_at", { ascending: false })
+        setTransactions((txData as Transaction[]) || [])
+
+        // Admin vê todos os clientes
+        const { data: clientsData } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("role", "client")
+          .order("created_at", { ascending: false })
+        setClients((clientsData as Profile[]) || [])
+
+        // Admin vê todos os saques
+        const { data: wdData } = await supabase
+          .from("withdrawals")
+          .select("*")
+          .order("created_at", { ascending: false })
+        setWithdrawals((wdData as Withdrawal[]) || [])
+
+        const { data: adjustmentsData } = await supabase
+          .from("balance_adjustments")
+          .select("*")
+          .order("created_at", { ascending: false })
+        setBalanceAdjustments((adjustmentsData as BalanceAdjustment[]) || [])
+      } else {
+        // Cliente vê apenas suas transações
+        const { data: txData } = await supabase
+          .from("transactions")
+          .select("*")
+          .eq("user_id", user.id)
+          .eq("is_chargeback", false)
+          .order("created_at", { ascending: false })
+        setTransactions((txData as Transaction[]) || [])
+
+        // Cliente vê apenas seus saques
+        const { data: wdData } = await supabase
+          .from("withdrawals")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false })
+        setWithdrawals((wdData as Withdrawal[]) || [])
+
+        const { data: adjustmentsData } = await supabase
+          .from("balance_adjustments")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false })
+        setBalanceAdjustments((adjustmentsData as BalanceAdjustment[]) || [])
+      }
+
+      // Buscar notificações
+      const { data: notifData } = await supabase
+        .from("notifications")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+      setNotifications((notifData as Notification[]) || [])
+    } catch (error) {
+      console.error("Erro ao carregar dados:", error)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [supabase])
+
+  useEffect(() => {
+    fetchUserData()
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        fetchUserData()
+      } else {
+        setUser(null)
+        setProfile(null)
+        setTransactions([])
+        setWithdrawals([])
+        setNotifications([])
+        setClients([])
+        setBalanceAdjustments([])
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [fetchUserData])
+
+  const debouncedRefreshData = useCallback(() => {
+    const timeoutId = setTimeout(() => {
+      fetchUserData()
+    }, 300)
+    return () => clearTimeout(timeoutId)
+  }, [])
+
+  const refreshData = async () => {
+    await fetchUserData()
+  }
+
+  const addTransaction = async (data: {
+    grossValue: number
+    brand: string
+    paymentType: string
+    installments: number
+    receiptUrl?: string
+    noReceiptReason?: string
+  }) => {
+    if (!user || !profile) return
+
+    // Verifica se cliente tem plano atribuído
+    if (profile.role === "client" && !profile.plan) {
+      throw new Error("Você ainda não possui um plano atribuído. Aguarde o gestor configurar seu plano.")
+    }
+
+    const brandGroup = data.brand === "visa_master" ? "VISA_MASTER" : "ELO_AMEX"
+    const calculation = calculateFee(
+      data.grossValue,
+      brandGroup as BrandGroup,
+      data.paymentType as "debit" | "credit",
+      data.installments as Installments,
+      profile.plan,
+    )
+
+    const status = data.receiptUrl ? "pending_verification" : "pending_receipt"
+
+    const { error } = await supabase.from("transactions").insert({
+      user_id: user.id,
+      gross_value: calculation.grossAmount,
+      net_value: calculation.netAmount,
+      fee_value: calculation.feeAmount,
+      fee_percentage: calculation.feePercentage,
+      brand: data.brand,
+      payment_type: data.paymentType,
+      installments: data.installments,
+      receipt_url: data.receiptUrl || null,
+      no_receipt_reason: data.noReceiptReason || null,
+      status,
+    })
+
+    if (error) throw error
+
+    // Se enviou comprovante, notifica admins
+    if (data.receiptUrl) {
+      const { data: admins } = await supabase.from("profiles").select("id").eq("role", "admin")
+
+      if (admins) {
+        for (const admin of admins) {
+          await supabase.from("notifications").insert({
+            user_id: admin.id,
+            type: "receipt_uploaded",
+            title: "Novo Comprovante",
+            message: `${profile?.full_name || "Cliente"} enviou um comprovante de transação`,
+          })
+        }
+      }
+    }
+
+    await refreshData()
+  }
+
+  const updateTransaction = async (id: string, updates: Partial<Transaction>) => {
+    const { error } = await supabase.from("transactions").update(updates).eq("id", id)
+
+    if (error) throw error
+    await refreshData()
+  }
+
+  const uploadReceipt = async (transactionId: string, receiptUrl: string) => {
+    if (!user) return
+
+    const { error } = await supabase
+      .from("transactions")
+      .update({
+        receipt_url: receiptUrl,
+        status: "pending_verification",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", transactionId)
+
+    if (error) throw error
+
+    // Notifica admins
+    const { data: admins } = await supabase.from("profiles").select("id").eq("role", "admin")
+
+    if (admins) {
+      for (const admin of admins) {
+        await supabase.from("notifications").insert({
+          user_id: admin.id,
+          type: "receipt_uploaded",
+          title: "Novo Comprovante",
+          message: `${profile?.full_name || "Cliente"} enviou um comprovante de transação`,
+          related_id: transactionId,
+        })
+      }
+    }
+
+    await refreshData()
+  }
+
+  const verifyTransaction = async (transactionId: string, approved: boolean, reason?: string) => {
+    if (!user) return
+
+    const transaction = transactions.find((t) => t.id === transactionId)
+    if (!transaction) return
+
+    const { error } = await supabase
+      .from("transactions")
+      .update({
+        status: approved ? "verified" : "rejected",
+        rejection_reason: reason || null,
+        verified_at: new Date().toISOString(),
+        verified_by: user.id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", transactionId)
+
+    if (error) throw error
+
+    // Notifica o cliente
+    await supabase.from("notifications").insert({
+      user_id: transaction.user_id,
+      type: approved ? "receipt_verified" : "receipt_rejected",
+      title: approved ? "Comprovante Aprovado" : "Comprovante Rejeitado",
+      message: approved
+        ? "Seu comprovante foi verificado e aprovado. O valor já está disponível para saque."
+        : `Seu comprovante foi rejeitado. Motivo: ${reason || "Não especificado"}`,
+      related_id: transactionId,
+    })
+
+    await refreshData()
+  }
+
+  const requestWithdrawal = async (data: {
+    amount: number
+    method: WithdrawalMethod
+    pixKey?: string
+    pixKeyType?: PixKeyType
+    pixOwnerName?: string
+    bankName?: string
+    bankAgency?: string
+    bankAccount?: string
+    boletoName?: string
+    boletoBeneficiaryName?: string
+    boletoNumber?: string
+    boletoValue?: number
+    boletoOrigin?: string
+  }) => {
+    if (!user) return
+
+    const { error } = await supabase.from("withdrawals").insert({
+      user_id: user.id,
+      amount: data.amount,
+      status: "pending",
+      withdrawal_method: data.method,
+      pix_key: data.pixKey || null,
+      pix_key_type: data.pixKeyType || null,
+      pix_owner_name: data.pixOwnerName || null,
+      bank_name: data.bankName || null,
+      bank_agency: data.bankAgency || null,
+      bank_account: data.bankAccount || null,
+      boleto_name: data.boletoName || null,
+      boleto_beneficiary_name: data.boletoBeneficiaryName || null,
+      boleto_number: data.boletoNumber || null,
+      boleto_value: data.boletoValue || null,
+      boleto_origin: data.boletoOrigin || null,
+    })
+
+    if (error) throw error
+
+    // Notifica admins
+    const { data: admins } = await supabase.from("profiles").select("id").eq("role", "admin")
+
+    if (admins) {
+      for (const admin of admins) {
+        await supabase.from("notifications").insert({
+          user_id: admin.id,
+          type: "withdrawal_requested",
+          title: "Nova Solicitação de Saque",
+          message: `${profile?.full_name || "Cliente"} solicitou um saque de R$ ${data.amount.toFixed(2)}`,
+        })
+      }
+    }
+
+    await refreshData()
+  }
+
+  const payWithdrawal = async (withdrawalId: string, proofUrl: string) => {
+    if (!user) return
+
+    const withdrawal = withdrawals.find((w) => w.id === withdrawalId)
+    if (!withdrawal) return
+
+    const { error } = await supabase
+      .from("withdrawals")
+      .update({
+        status: "paid",
+        admin_proof_url: proofUrl,
+        paid_by: user.id,
+        paid_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", withdrawalId)
+
+    if (error) throw error
+
+    // Marca transações como pagas (até o valor do saque)
+    let remaining = withdrawal.amount
+    const userTransactions = transactions
+      .filter((t) => t.user_id === withdrawal.user_id && t.status === "verified")
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+
+    for (const tx of userTransactions) {
+      if (remaining <= 0) break
+      await supabase.from("transactions").update({ status: "paid" }).eq("id", tx.id)
+      remaining -= tx.net_value
+    }
+
+    // Notifica o cliente
+    await supabase.from("notifications").insert({
+      user_id: withdrawal.user_id,
+      type: "withdrawal_paid",
+      title: "Saque Realizado",
+      message: `Seu saque de R$ ${withdrawal.amount.toFixed(2)} foi processado e pago.`,
+      related_id: withdrawalId,
+    })
+
+    await refreshData()
+  }
+
+  const cancelWithdrawal = async (withdrawalId: string, reason: string) => {
+    if (!user) return
+
+    const withdrawal = withdrawals.find((w) => w.id === withdrawalId)
+    if (!withdrawal) return
+
+    const { error } = await supabase.rpc("cancel_withdrawal_with_reason", {
+      withdrawal_id: withdrawalId,
+      cancel_reason: reason,
+    })
+
+    if (error) {
+      console.error("[v0] Erro ao cancelar saque:", error)
+      throw error
+    }
+
+    // Notify the client
+    await supabase.from("notifications").insert({
+      user_id: withdrawal.user_id,
+      type: "withdrawal_cancelled",
+      title: "Saque Cancelado",
+      message: `Seu saque de R$ ${withdrawal.amount.toFixed(2)} foi cancelado. Motivo: ${reason}`,
+      related_id: withdrawalId,
+    })
+
+    await refreshData()
+  }
+
+  const markNotificationRead = async (id: string) => {
+    await supabase.from("notifications").update({ read: true }).eq("id", id)
+    await refreshData()
+  }
+
+  const markAllNotificationsRead = async () => {
+    if (!user) return
+    await supabase.from("notifications").update({ read: true }).eq("user_id", user.id)
+    await refreshData()
+  }
+
+  const getClientBalances = (userId: string): ClientBalances => {
+    // Busca o perfil do cliente para obter balance e pending_balance
+    const clientProfile = clients.find((c) => c.id === userId) || profile
+
+    if (!clientProfile) {
+      console.warn("[v0] Cliente não encontrado:", userId)
+      return {
+        available: 0,
+        pending: 0,
+        withdrawn: 0,
+        total: 0,
+      }
+    }
+
+    // Os triggers do Supabase já calculam balance (disponível) e pending_balance (pendente)
+    const available = clientProfile.balance || 0
+    const pending = clientProfile.pending_balance || 0
+
+    // Calcular apenas withdrawn e total (que não são gerenciados por triggers)
+    const clientTransactions = transactions.filter((t) => t.user_id === userId)
+    const clientWithdrawals = withdrawals.filter((w) => w.user_id === userId)
+
+    const withdrawn = clientWithdrawals.filter((w) => w.status === "paid").reduce((sum, w) => sum + w.amount, 0)
+
+    const total = clientTransactions
+      .filter((t) => t.status !== "rejected" && !t.is_chargeback)
+      .reduce((sum, t) => sum + t.gross_value, 0)
+
+    console.log("[v0] Balance from database for user:", userId, {
+      available: available.toFixed(2),
+      pending: pending.toFixed(2),
+      withdrawn: withdrawn.toFixed(2),
+      total: total.toFixed(2),
+      source: "profiles.balance (calculated by triggers)",
+    })
+
+    return {
+      available: Math.max(0, available),
+      pending: Math.max(0, pending),
+      withdrawn,
+      total,
+    }
+  }
+
+  const updateProfile = async (updates: Partial<Profile>) => {
+    if (!user) return
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq("id", user.id)
+
+    if (error) throw error
+    await refreshData()
+  }
+
+  const assignClientPlan = async (clientId: string, plan: PlanType) => {
+    if (!user || profile?.role !== "admin") return
+
+    console.log("[v0] Atribuindo plano:", { clientId, plan })
+
+    const { error, data } = await supabase
+      .from("profiles")
+      .update({ plan, updated_at: new Date().toISOString() })
+      .eq("id", clientId)
+      .select()
+      .single()
+
+    if (error) {
+      console.error("[v0] Erro ao atribuir plano:", error)
+      throw error
+    }
+
+    console.log("[v0] Plano atribuído com sucesso:", data)
+
+    // Atualiza o estado local imediatamente
+    setClients((prevClients) => prevClients.map((c) => (c.id === clientId ? { ...c, plan } : c)))
+
+    // Notifica o cliente sobre o plano atribuído
+    const planNames: Record<string, string> = {
+      basico: "Básico",
+      intermediario: "Intermediário",
+      top: "Top",
+    }
+
+    await supabase.from("notifications").insert({
+      user_id: clientId,
+      type: "plan_assigned",
+      title: "Plano Atribuído",
+      message: plan
+        ? `Você foi atribuído ao plano ${planNames[plan]}. Agora você pode registrar suas transações.`
+        : "Seu plano foi removido. Entre em contato com o gestor.",
+    })
+
+    // Recarrega os dados para garantir sincronização
+    await refreshData()
+  }
+
+  const logout = async () => {
+    await supabase.auth.signOut()
+    window.location.href = "/auth/login"
+  }
+
+  const addBalanceAdjustment = async (userId: string, type: AdjustmentType, amount: number, reason: string) => {
+    if (!user || profile?.role !== "admin") return
+
+    const { error } = await supabase.from("balance_adjustments").insert({
+      user_id: userId,
+      admin_id: user.id,
+      type,
+      amount,
+      reason,
+    })
+
+    if (error) throw error
+
+    // Notifica o cliente
+    const client = clients.find((c) => c.id === userId)
+    await supabase.from("notifications").insert({
+      user_id: userId,
+      type: type === "add" ? "plan_assigned" : "receipt_rejected",
+      title: type === "add" ? "Saldo Adicionado" : "Saldo Removido",
+      message:
+        type === "add"
+          ? `O gestor adicionou R$ ${amount.toFixed(2)} ao seu saldo. Motivo: ${reason}`
+          : `O gestor removeu R$ ${amount.toFixed(2)} do seu saldo. Motivo: ${reason}`,
+    })
+
+    await refreshData()
+  }
+
+  const registerChargeback = async (transactionId: string, reason: string) => {
+    if (!user) return
+
+    try {
+      const transaction = transactions.find((t) => t.id === transactionId)
+      if (!transaction) {
+        throw new Error("Transação não encontrada")
+      }
+
+      console.log("[v0] Iniciando estorno da transação:", transactionId)
+
+      // Apenas atualizar o status para 'chargeback' - trigger do banco desconta do saldo automaticamente
+      const { error: updateError } = await supabase
+        .from("transactions")
+        .update({
+          status: "chargeback",
+          chargeback_reason: reason,
+          chargeback_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", transactionId)
+
+      if (updateError) {
+        console.error("[v0] Erro ao atualizar transação:", updateError)
+        throw updateError
+      }
+
+      console.log("[v0] Transação marcada como estornada - trigger do banco ajustará o saldo")
+
+      // Criar notificação para o cliente se for admin
+      if (profile?.role === "admin") {
+        await supabase.from("notifications").insert({
+          user_id: transaction.user_id,
+          type: "receipt_rejected",
+          title: "Estorno Registrado",
+          message: `Estorno de R$ ${transaction.net_value.toFixed(2)}. Motivo: ${reason}`,
+          related_id: transactionId,
+        })
+      }
+
+      // Atualizar estado local
+      setTransactions((prev) =>
+        prev.map((t) =>
+          t.id === transactionId
+            ? { ...t, status: "chargeback", chargeback_reason: reason, chargeback_at: new Date().toISOString() }
+            : t,
+        ),
+      )
+
+      // Recarregar saldo do banco (trigger já atualizou)
+      await fetchBalance()
+
+      console.log("[v0] Estorno concluído - saldo atualizado pelo trigger do banco")
+    } catch (error) {
+      console.error("[v0] Erro ao registrar estorno:", error)
+      throw error
+    }
+  }
+
+  const approveWithoutReceipt = async (transactionId: string) => {
+    if (!user || profile?.role !== "admin") return
+
+    const transaction = transactions.find((t) => t.id === transactionId)
+    if (!transaction) return
+
+    const { error } = await supabase
+      .from("transactions")
+      .update({
+        status: "verified",
+        verified_at: new Date().toISOString(),
+        verified_by: user.id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", transactionId)
+
+    if (error) throw error
+
+    // Notifica o cliente
+    await supabase.from("notifications").insert({
+      user_id: transaction.user_id,
+      type: "receipt_verified",
+      title: "Transação Aprovada",
+      message: `Sua transação foi aprovada sem comprovante. O valor já está disponível para saque.`,
+      related_id: transactionId,
+    })
+
+    await refreshData()
+  }
+
+  const fetchBalance = useCallback(async () => {
+    // Placeholder for balance fetching logic
+  }, [])
+
+  const contextValue = useMemo(
+    () => ({
+      user,
+      profile,
+      isLoading,
+      transactions,
+      withdrawals,
+      notifications,
+      clients,
+      balanceAdjustments,
+      addTransaction,
+      updateTransaction,
+      uploadReceipt,
+      verifyTransaction,
+      requestWithdrawal,
+      payWithdrawal,
+      cancelWithdrawal,
+      markNotificationRead,
+      markAllNotificationsRead,
+      getClientBalances,
+      updateProfile,
+      assignClientPlan,
+      addBalanceAdjustment,
+      registerChargeback,
+      approveWithoutReceipt,
+      refreshData,
+      logout,
+    }),
+    [user, profile, isLoading, transactions, withdrawals, notifications, clients, balanceAdjustments],
+  )
+
+  return <SupabaseContext.Provider value={contextValue}>{children}</SupabaseContext.Provider>
+}
+
+export function useSupabase() {
+  const context = useContext(SupabaseContext)
+  if (!context) {
+    throw new Error("useSupabase must be used within a SupabaseProvider")
+  }
+  return context
+}
