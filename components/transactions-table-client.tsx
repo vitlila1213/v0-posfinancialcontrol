@@ -25,82 +25,135 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
   const { uploadReceipt } = useSupabase()
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [uploadingId, setUploadingId] = useState<string | null>(null)
-  const [debugInfo, setDebugInfo] = useState<string>("")
+  const [progress, setProgress] = useState<string>("")
 
   // ========================================
-  // VERSÃO COM DEBUG COMPLETO PARA IPHONE
+  // COMPRESSÃO DE IMAGEM PARA IPHONE
   // ========================================
-  const handleFileSelect = async (transactionId: string, event: React.ChangeEvent<HTMLInputElement>) => {
-    try {
-      // CHECKPOINT 1
-      setDebugInfo("1️⃣ Função chamada")
-      await new Promise(resolve => setTimeout(resolve, 100))
-
-      const file = event.target.files?.[0]
+  const compressImage = async (file: File): Promise<File> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
       
-      // CHECKPOINT 2
-      if (!file) {
-        setDebugInfo("❌ Nenhum arquivo detectado!")
-        alert("❌ ERRO: Nenhum arquivo foi selecionado")
-        return
+      reader.onload = (e) => {
+        const img = new Image()
+        
+        img.onload = () => {
+          // Criar canvas para redimensionar
+          const canvas = document.createElement('canvas')
+          
+          // Definir tamanho máximo (mantém proporção)
+          const MAX_WIDTH = 1200
+          const MAX_HEIGHT = 1200
+          
+          let width = img.width
+          let height = img.height
+          
+          // Calcular novo tamanho mantendo proporção
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height = (height * MAX_WIDTH) / width
+              width = MAX_WIDTH
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width = (width * MAX_HEIGHT) / height
+              height = MAX_HEIGHT
+            }
+          }
+          
+          canvas.width = width
+          canvas.height = height
+          
+          const ctx = canvas.getContext('2d')
+          if (!ctx) {
+            reject(new Error('Erro ao criar contexto'))
+            return
+          }
+          
+          // Desenhar imagem redimensionada
+          ctx.drawImage(img, 0, 0, width, height)
+          
+          // Converter para Blob com compressão (0.7 = 70% qualidade)
+          canvas.toBlob(
+            (blob) => {
+              if (!blob) {
+                reject(new Error('Erro ao comprimir'))
+                return
+              }
+              
+              // Criar novo File a partir do Blob
+              const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, '.jpg'), {
+                type: 'image/jpeg',
+              })
+              
+              resolve(compressedFile)
+            },
+            'image/jpeg',
+            0.7 // 70% de qualidade (reduz muito o tamanho)
+          )
+        }
+        
+        img.onerror = () => reject(new Error('Erro ao carregar imagem'))
+        img.src = e.target?.result as string
+      }
+      
+      reader.onerror = () => reject(new Error('Erro ao ler arquivo'))
+      reader.readAsDataURL(file)
+    })
+  }
+
+  const handleFileSelect = async (transactionId: string, event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setUploadingId(transactionId)
+    setProgress("Processando imagem...")
+
+    try {
+      let processedFile = file
+
+      // Se for imagem, comprimir
+      if (file.type.startsWith('image/')) {
+        const originalSize = (file.size / 1024).toFixed(0)
+        setProgress(`Imagem original: ${originalSize}KB. Comprimindo...`)
+        
+        processedFile = await compressImage(file)
+        
+        const compressedSize = (processedFile.size / 1024).toFixed(0)
+        setProgress(`Comprimido: ${compressedSize}KB. Enviando...`)
+        
+        // Aguardar um pouco para usuário ver a mensagem
+        await new Promise(resolve => setTimeout(resolve, 500))
+      } else {
+        setProgress("Enviando PDF...")
       }
 
-      setDebugInfo(`2️⃣ Arquivo detectado: ${file.name} (${(file.size/1024).toFixed(1)}KB)`)
-      await new Promise(resolve => setTimeout(resolve, 500))
+      // Verificar se ainda está abaixo de 1MB
+      if (processedFile.size > 1024 * 1024) {
+        throw new Error(`Arquivo ainda muito grande: ${(processedFile.size / 1024 / 1024).toFixed(1)}MB. Máximo: 1MB`)
+      }
 
-      setUploadingId(transactionId)
+      await uploadReceipt(transactionId, processedFile)
 
-      // CHECKPOINT 3 - Ler o arquivo
-      setDebugInfo("3️⃣ Lendo arquivo...")
-      await new Promise(resolve => setTimeout(resolve, 100))
-
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () => {
-          setDebugInfo("4️⃣ Arquivo lido com sucesso!")
-          resolve(reader.result as string)
-        }
-        reader.onerror = () => {
-          setDebugInfo("❌ Erro ao ler arquivo")
-          reject(new Error("Erro ao ler arquivo"))
-        }
-        reader.readAsDataURL(file)
-      })
-
-      await new Promise(resolve => setTimeout(resolve, 500))
-
-      // CHECKPOINT 4 - Enviar
-      setDebugInfo("5️⃣ Enviando para servidor...")
-      await new Promise(resolve => setTimeout(resolve, 100))
-
-      await uploadReceipt(transactionId, file)
-
-      // SUCESSO
-      setDebugInfo("✅ SUCESSO!")
+      setProgress("✅ Enviado!")
       alert("✅ Comprovante enviado com sucesso!")
       
     } catch (error: any) {
-      const errorMsg = error.message || JSON.stringify(error)
-      setDebugInfo(`❌ ERRO: ${errorMsg}`)
-      alert(`❌ ERRO: ${errorMsg}`)
-      console.error("Erro completo:", error)
+      console.error("Erro:", error)
+      setProgress("")
+      alert(`❌ Erro: ${error.message}`)
     } finally {
-      setUploadingId(null)
+      setTimeout(() => {
+        setUploadingId(null)
+        setProgress("")
+      }, 1000)
       event.target.value = ""
     }
   }
 
-  // FUNÇÃO DE TESTE SIMPLIFICADA
-  const testImageSelection = async (transactionId: string) => {
-    alert("🧪 Iniciando teste de seleção de imagem...")
-    
+  const triggerFileInput = (transactionId: string) => {
     const input = document.getElementById(`upload-${transactionId}`) as HTMLInputElement
-    if (!input) {
-      alert("❌ Input não encontrado!")
-      return
-    }
-    
-    input.click()
+    input?.click()
   }
 
   if (transactions.length === 0) {
@@ -179,14 +232,6 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
                       </div>
                     </div>
 
-                    {/* DEBUG INFO */}
-                    {debugInfo && uploadingId === tx.id && (
-                      <div className="rounded-lg bg-blue-500/10 p-3 border border-blue-500/30">
-                        <p className="text-sm text-blue-400 font-mono">{debugInfo}</p>
-                      </div>
-                    )}
-
-                    {/* UPLOAD AREA */}
                     {tx.status === "pending_receipt" && (
                       <div className="space-y-3">
                         {tx.no_receipt_reason && (
@@ -197,19 +242,26 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
                           </div>
                         )}
 
-                        {/* BOTÃO VISÍVEL PARA TESTE */}
+                        {/* PROGRESSO */}
+                        {uploadingId === tx.id && progress && (
+                          <div className="rounded-lg bg-blue-500/10 p-3 border border-blue-500/30">
+                            <p className="text-sm text-blue-400 text-center font-medium">{progress}</p>
+                          </div>
+                        )}
+
+                        {/* BOTÃO DE UPLOAD */}
                         <button
-                          onClick={() => testImageSelection(tx.id)}
+                          onClick={() => triggerFileInput(tx.id)}
                           disabled={uploadingId === tx.id}
-                          className="w-full rounded-xl border-2 border-dashed border-amber-500/30 bg-amber-500/10 p-6 hover:bg-amber-500/20 transition-colors disabled:opacity-50"
+                          className="w-full rounded-xl border-2 border-dashed border-amber-500/30 bg-amber-500/10 p-6 hover:bg-amber-500/20 transition-colors disabled:opacity-50 active:scale-98"
                         >
                           <div className="flex flex-col items-center gap-2">
                             <Upload className="h-8 w-8 text-amber-500" />
                             <span className="text-base font-medium text-amber-500">
-                              {uploadingId === tx.id ? debugInfo : "Toque para enviar comprovante"}
+                              {uploadingId === tx.id ? "Processando..." : "Enviar Comprovante"}
                             </span>
                             <span className="text-xs text-amber-500/60">
-                              JPG, PNG ou PDF
+                              Fotos são comprimidas automaticamente
                             </span>
                           </div>
                         </button>
@@ -218,7 +270,7 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
                         <input
                           type="file"
                           id={`upload-${tx.id}`}
-                          accept="image/*,application/pdf"
+                          accept="image/jpeg,image/jpg,image/png,image/heic,image/heif,application/pdf"
                           onChange={(e) => handleFileSelect(tx.id, e)}
                           className="hidden"
                           disabled={uploadingId === tx.id}
