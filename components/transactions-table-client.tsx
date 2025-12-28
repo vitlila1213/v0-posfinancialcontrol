@@ -7,6 +7,7 @@ import { useSupabase } from "@/lib/supabase-context"
 import type { Transaction } from "@/lib/types"
 import { motion, AnimatePresence } from "framer-motion"
 
+// --- STATUS CONFIG (Mantido igual) ---
 const statusConfig: Record<string, { label: string; color: string }> = {
   pending_receipt: { label: "Aguardando Comprovante", color: "bg-amber-500/20 text-amber-500" },
   pending_verification: { label: "Em Verificação", color: "bg-blue-500/20 text-blue-500" },
@@ -27,37 +28,42 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
   const [uploadingId, setUploadingId] = useState<string | null>(null)
 
   const handleFileSelect = async (transactionId: string, event: React.ChangeEvent<HTMLInputElement>) => {
-    // 1. DEBUG IMEDIATO: Verifica se o iPhone registrou a seleção
+    // 1. LIMPEZA DE ERROS ANTERIORES
     const file = event.target.files?.[0]
-    
-    if (!file) {
-      // Se caiu aqui, o usuário cancelou ou o iOS bloqueou a seleção
-      return
-    }
+    if (!file) return
 
-    // ALERTA DE TESTE (Remova depois se funcionar)
-    alert(`iOS detectou arquivo: ${file.name} (${(file.size/1024).toFixed(0)}kb)`)
+    // 2. ALERTA: O iPhone detectou o arquivo?
+    // alert(`Etapa 1: Arquivo detectado no iOS!\nNome: ${file.name}\nTamanho: ${(file.size/1024).toFixed(0)}kb`)
 
     setUploadingId(transactionId)
 
     try {
-      // 2. SEM PROCESSAMENTO: Não tenta canvas, não tenta compressão.
-      // Apenas cria a URL temporária do arquivo bruto.
-      const url = URL.createObjectURL(file)
+      // 3. ALERTA: Iniciando envio
+      // alert("Etapa 2: Enviando para o Supabase...")
+
+      // --- CORREÇÃO PRINCIPAL AQUI ---
+      // Antes você enviava 'url' (que era um texto blob:...).
+      // Agora enviamos 'file' (o arquivo binário real).
+      // Se a sua função uploadReceipt esperar uma URL, isso vai quebrar e precisamos ajustar o Contexto.
+      // Mas o padrão correto é enviar o File.
       
-      // 3. Envia direto
-      await uploadReceipt(transactionId, url)
+      await uploadReceipt(transactionId, file) // Mudei de 'url' para 'file'
+
+      // 4. SUCESSO
+      alert("Sucesso! O comprovante foi enviado.")
       
-    } catch (error) {
-      console.error("Erro ao enviar:", error)
-      alert("Erro no envio: " + JSON.stringify(error))
+    } catch (error: any) {
+      console.error("Erro detalhado:", error)
+      // 5. ERRO EXPLÍCITO
+      alert(`ERRO NO ENVIO:\n${error.message || JSON.stringify(error)}`)
     } finally {
       setUploadingId(null)
-      // Limpa o input para permitir selecionar o mesmo arquivo novamente
+      // Limpa o input
       event.target.value = ""
     }
   }
 
+  // --- RENDERIZAÇÃO (Mantida igual, apenas o Input foi ajustado) ---
   if (transactions.length === 0) {
     return (
       <div className="py-12 text-center">
@@ -111,7 +117,7 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
                   className="border-t border-white/5"
                 >
                   <div className="space-y-3 p-4">
-                    {/* ... (Bloco de detalhes financeiros mantido igual) ... */}
+                    {/* Infos Financeiras */}
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <p className="text-xs text-muted-foreground">Valor Bruto</p>
@@ -135,6 +141,7 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
                       </div>
                     </div>
 
+                    {/* Área de Upload */}
                     {tx.status === "pending_receipt" && (
                       <div className="space-y-3">
                         {tx.no_receipt_reason && (
@@ -145,32 +152,27 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
                           </div>
                         )}
 
-                        {/* --- ÁREA DE UPLOAD CORRIGIDA PARA IOS --- */}
                         <div className="relative rounded-xl border-2 border-dashed border-amber-500/30 bg-amber-500/10 p-4">
-                          
-                          {/* INPUT INVISÍVEL COBRINDO TUDO (Truque para garantir o clique no iOS) */}
+                          {/* INPUT DESTRAVADO (Opacidade 0 + Accept amplo) */}
                           <input
                             type="file"
-                            accept="image/*" 
+                            accept="image/*, application/pdf"
                             onChange={(e) => handleFileSelect(tx.id, e)}
                             className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
                             id={`upload-${tx.id}`}
                             disabled={uploadingId === tx.id}
                           />
-                          
-                          {/* VISUAL DO BOTÃO (Fica embaixo do input invisível) */}
                           <div className="flex flex-col items-center gap-2">
                             <Upload className="h-6 w-6 text-amber-500" />
                             <span className="text-sm text-amber-500">
-                              {uploadingId === tx.id ? "Enviando..." : "Clique para enviar o comprovante"}
+                              {uploadingId === tx.id ? "Enviando arquivo..." : "Clique para enviar o comprovante"}
                             </span>
                           </div>
-                          
                         </div>
                       </div>
                     )}
 
-                    {/* ... (Restante do código: Link do comprovante, Estorno, etc. mantidos iguais) ... */}
+                    {/* Link do Comprovante */}
                     {tx.receipt_url && (
                       <div className="flex items-center gap-2 rounded-lg bg-white/5 p-3">
                         <FileText className="h-5 w-5 text-emerald-500" />
@@ -186,8 +188,8 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
                         </a>
                       </div>
                     )}
-                    
-                    {/* Botão de Estorno e Motivos de Rejeição mantidos ... */}
+
+                    {/* Rejeição */}
                     {tx.status === "rejected" && tx.rejection_reason && (
                       <div className="rounded-lg bg-rose-500/10 p-3">
                         <p className="text-sm text-rose-400">
@@ -196,7 +198,8 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
                       </div>
                     )}
 
-                     {!tx.is_chargeback && onChargeback && (
+                    {/* Botão de Estorno */}
+                    {!tx.is_chargeback && onChargeback && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
@@ -209,6 +212,7 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
                       </button>
                     )}
 
+                    {/* Motivo do Estorno */}
                     {tx.is_chargeback && tx.chargeback_reason && (
                       <div className="rounded-lg bg-red-500/10 p-3">
                         <p className="text-sm text-red-400">
