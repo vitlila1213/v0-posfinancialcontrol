@@ -25,30 +25,34 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
   const { uploadReceipt } = useSupabase()
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [uploadingId, setUploadingId] = useState<string | null>(null)
-  const [progress, setProgress] = useState<string>("")
+  const [debugLogs, setDebugLogs] = useState<string[]>([])
 
-  // ========================================
-  // COMPRESSÃO DE IMAGEM PARA IPHONE
-  // ========================================
+  // Função para adicionar log visual
+  const addLog = (message: string) => {
+    setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`])
+  }
+
   const compressImage = async (file: File): Promise<File> => {
     return new Promise((resolve, reject) => {
+      addLog("🔄 ETAPA 3: Iniciando compressão da imagem")
+      
       const reader = new FileReader()
       
       reader.onload = (e) => {
+        addLog("🔄 ETAPA 4: Arquivo lido, criando imagem...")
+        
         const img = new Image()
         
         img.onload = () => {
-          // Criar canvas para redimensionar
-          const canvas = document.createElement('canvas')
+          addLog(`🔄 ETAPA 5: Imagem carregada (${img.width}x${img.height}px)`)
           
-          // Definir tamanho máximo (mantém proporção)
+          const canvas = document.createElement('canvas')
           const MAX_WIDTH = 1200
           const MAX_HEIGHT = 1200
           
           let width = img.width
           let height = img.height
           
-          // Calcular novo tamanho mantendo proporção
           if (width > height) {
             if (width > MAX_WIDTH) {
               height = (height * MAX_WIDTH) / width
@@ -66,22 +70,26 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
           
           const ctx = canvas.getContext('2d')
           if (!ctx) {
+            addLog("❌ ERRO: Não conseguiu criar contexto do canvas")
             reject(new Error('Erro ao criar contexto'))
             return
           }
           
-          // Desenhar imagem redimensionada
+          addLog(`🔄 ETAPA 6: Redimensionando para ${width}x${height}px`)
           ctx.drawImage(img, 0, 0, width, height)
           
-          // Converter para Blob com compressão (0.7 = 70% qualidade)
+          addLog("🔄 ETAPA 7: Convertendo para JPEG...")
           canvas.toBlob(
             (blob) => {
               if (!blob) {
+                addLog("❌ ERRO: Não conseguiu criar blob")
                 reject(new Error('Erro ao comprimir'))
                 return
               }
               
-              // Criar novo File a partir do Blob
+              const sizeKB = (blob.size/1024).toFixed(0)
+              addLog(`✅ ETAPA 8: Comprimido para ${sizeKB}KB`)
+              
               const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, '.jpg'), {
                 type: 'image/jpeg',
               })
@@ -89,64 +97,79 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
               resolve(compressedFile)
             },
             'image/jpeg',
-            0.7 // 70% de qualidade (reduz muito o tamanho)
+            0.7
           )
         }
         
-        img.onerror = () => reject(new Error('Erro ao carregar imagem'))
+        img.onerror = () => {
+          addLog("❌ ERRO: Falha ao carregar imagem")
+          reject(new Error('Erro ao carregar imagem'))
+        }
+        
         img.src = e.target?.result as string
       }
       
-      reader.onerror = () => reject(new Error('Erro ao ler arquivo'))
+      reader.onerror = () => {
+        addLog("❌ ERRO: Falha ao ler arquivo")
+        reject(new Error('Erro ao ler arquivo'))
+      }
+      
       reader.readAsDataURL(file)
     })
   }
 
   const handleFileSelect = async (transactionId: string, event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-
-    setUploadingId(transactionId)
-    setProgress("Processando imagem...")
-
     try {
+      setDebugLogs([]) // Limpar logs anteriores
+      addLog("🎯 ETAPA 1: Seleção de arquivo iniciada")
+      
+      const file = event.target.files?.[0]
+      
+      if (!file) {
+        addLog("❌ ERRO: Nenhum arquivo selecionado")
+        return
+      }
+
+      const sizeKB = (file.size/1024).toFixed(0)
+      addLog(`✅ ETAPA 2: Arquivo detectado - ${file.name} (${sizeKB}KB)`)
+
+      setUploadingId(transactionId)
+
       let processedFile = file
 
       // Se for imagem, comprimir
-      if (file.type.startsWith('image/')) {
-        const originalSize = (file.size / 1024).toFixed(0)
-        setProgress(`Imagem original: ${originalSize}KB. Comprimindo...`)
+      if (file.type.startsWith('image/') || file.type === '') {
+        addLog("📸 Detectada imagem, comprimindo...")
         
         processedFile = await compressImage(file)
         
-        const compressedSize = (processedFile.size / 1024).toFixed(0)
-        setProgress(`Comprimido: ${compressedSize}KB. Enviando...`)
-        
-        // Aguardar um pouco para usuário ver a mensagem
-        await new Promise(resolve => setTimeout(resolve, 500))
+        const finalSize = (processedFile.size/1024).toFixed(0)
+        addLog(`✅ ETAPA 9: Pronto para envio (${finalSize}KB)`)
       } else {
-        setProgress("Enviando PDF...")
+        addLog("📄 Arquivo PDF detectado")
       }
 
-      // Verificar se ainda está abaixo de 1MB
+      // Verificar tamanho final
       if (processedFile.size > 1024 * 1024) {
-        throw new Error(`Arquivo ainda muito grande: ${(processedFile.size / 1024 / 1024).toFixed(1)}MB. Máximo: 1MB`)
+        const sizeMB = (processedFile.size / 1024 / 1024).toFixed(1)
+        addLog(`❌ ERRO: Arquivo muito grande (${sizeMB}MB)`)
+        throw new Error(`Arquivo ainda muito grande: ${sizeMB}MB. Máximo: 1MB`)
       }
 
+      addLog("🚀 ETAPA 10: Enviando para servidor...")
       await uploadReceipt(transactionId, processedFile)
 
-      setProgress("✅ Enviado!")
+      addLog("✅ SUCESSO: Comprovante enviado!")
       alert("✅ Comprovante enviado com sucesso!")
       
     } catch (error: any) {
       console.error("Erro:", error)
-      setProgress("")
+      addLog(`❌ ERRO FINAL: ${error.message}`)
       alert(`❌ Erro: ${error.message}`)
     } finally {
       setTimeout(() => {
         setUploadingId(null)
-        setProgress("")
-      }, 1000)
+      }, 2000)
       event.target.value = ""
     }
   }
@@ -242,10 +265,17 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
                           </div>
                         )}
 
-                        {/* PROGRESSO */}
-                        {uploadingId === tx.id && progress && (
-                          <div className="rounded-lg bg-blue-500/10 p-3 border border-blue-500/30">
-                            <p className="text-sm text-blue-400 text-center font-medium">{progress}</p>
+                        {/* LOGS DE DEBUG VISÍVEIS */}
+                        {uploadingId === tx.id && debugLogs.length > 0 && (
+                          <div className="rounded-lg bg-slate-900 border border-blue-500/30 p-3 max-h-60 overflow-y-auto">
+                            <p className="text-xs font-semibold text-blue-400 mb-2">📋 Log de Processamento:</p>
+                            <div className="space-y-1">
+                              {debugLogs.map((log, idx) => (
+                                <p key={idx} className="text-xs font-mono text-slate-300">
+                                  {log}
+                                </p>
+                              ))}
+                            </div>
                           </div>
                         )}
 
@@ -253,7 +283,7 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
                         <button
                           onClick={() => triggerFileInput(tx.id)}
                           disabled={uploadingId === tx.id}
-                          className="w-full rounded-xl border-2 border-dashed border-amber-500/30 bg-amber-500/10 p-6 hover:bg-amber-500/20 transition-colors disabled:opacity-50 active:scale-98"
+                          className="w-full rounded-xl border-2 border-dashed border-amber-500/30 bg-amber-500/10 p-6 hover:bg-amber-500/20 transition-colors disabled:opacity-50 active:scale-[0.98]"
                         >
                           <div className="flex flex-col items-center gap-2">
                             <Upload className="h-8 w-8 text-amber-500" />
@@ -261,7 +291,7 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
                               {uploadingId === tx.id ? "Processando..." : "Enviar Comprovante"}
                             </span>
                             <span className="text-xs text-amber-500/60">
-                              Fotos são comprimidas automaticamente
+                              Imagens são comprimidas automaticamente
                             </span>
                           </div>
                         </button>
