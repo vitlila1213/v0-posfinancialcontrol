@@ -26,15 +26,35 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [uploadingId, setUploadingId] = useState<string | null>(null)
 
-  const handleUpload = async (transactionId: string, file: File) => {
+  const handleFileSelect = async (transactionId: string, event: React.ChangeEvent<HTMLInputElement>) => {
+    // 1. DEBUG IMEDIATO: Verifica se o iPhone registrou a seleção
+    const file = event.target.files?.[0]
+    
+    if (!file) {
+      // Se caiu aqui, o usuário cancelou ou o iOS bloqueou a seleção
+      return
+    }
+
+    // ALERTA DE TESTE (Remova depois se funcionar)
+    alert(`iOS detectou arquivo: ${file.name} (${(file.size/1024).toFixed(0)}kb)`)
+
     setUploadingId(transactionId)
+
     try {
+      // 2. SEM PROCESSAMENTO: Não tenta canvas, não tenta compressão.
+      // Apenas cria a URL temporária do arquivo bruto.
       const url = URL.createObjectURL(file)
+      
+      // 3. Envia direto
       await uploadReceipt(transactionId, url)
+      
     } catch (error) {
-      console.error("Erro ao enviar comprovante:", error)
+      console.error("Erro ao enviar:", error)
+      alert("Erro no envio: " + JSON.stringify(error))
     } finally {
       setUploadingId(null)
+      // Limpa o input para permitir selecionar o mesmo arquivo novamente
+      event.target.value = ""
     }
   }
 
@@ -91,6 +111,7 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
                   className="border-t border-white/5"
                 >
                   <div className="space-y-3 p-4">
+                    {/* ... (Bloco de detalhes financeiros mantido igual) ... */}
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <p className="text-xs text-muted-foreground">Valor Bruto</p>
@@ -124,31 +145,32 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
                           </div>
                         )}
 
-                        <div className="rounded-xl border-2 border-dashed border-amber-500/30 bg-amber-500/10 p-4">
+                        {/* --- ÁREA DE UPLOAD CORRIGIDA PARA IOS --- */}
+                        <div className="relative rounded-xl border-2 border-dashed border-amber-500/30 bg-amber-500/10 p-4">
+                          
+                          {/* INPUT INVISÍVEL COBRINDO TUDO (Truque para garantir o clique no iOS) */}
                           <input
                             type="file"
-                            accept=".pdf,.png,.jpg,.jpeg"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0]
-                              if (file) handleUpload(tx.id, file)
-                            }}
-                            className="hidden"
+                            accept="image/*" 
+                            onChange={(e) => handleFileSelect(tx.id, e)}
+                            className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
                             id={`upload-${tx.id}`}
                             disabled={uploadingId === tx.id}
                           />
-                          <label
-                            htmlFor={`upload-${tx.id}`}
-                            className="flex cursor-pointer flex-col items-center gap-2"
-                          >
+                          
+                          {/* VISUAL DO BOTÃO (Fica embaixo do input invisível) */}
+                          <div className="flex flex-col items-center gap-2">
                             <Upload className="h-6 w-6 text-amber-500" />
                             <span className="text-sm text-amber-500">
                               {uploadingId === tx.id ? "Enviando..." : "Clique para enviar o comprovante"}
                             </span>
-                          </label>
+                          </div>
+                          
                         </div>
                       </div>
                     )}
 
+                    {/* ... (Restante do código: Link do comprovante, Estorno, etc. mantidos iguais) ... */}
                     {tx.receipt_url && (
                       <div className="flex items-center gap-2 rounded-lg bg-white/5 p-3">
                         <FileText className="h-5 w-5 text-emerald-500" />
@@ -164,7 +186,8 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
                         </a>
                       </div>
                     )}
-
+                    
+                    {/* Botão de Estorno e Motivos de Rejeição mantidos ... */}
                     {tx.status === "rejected" && tx.rejection_reason && (
                       <div className="rounded-lg bg-rose-500/10 p-3">
                         <p className="text-sm text-rose-400">
@@ -173,7 +196,7 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
                       </div>
                     )}
 
-                    {!tx.is_chargeback && onChargeback && (
+                     {!tx.is_chargeback && onChargeback && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
