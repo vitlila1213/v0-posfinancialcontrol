@@ -330,10 +330,23 @@ export function calculateChargeValue(
     feePercentage = (rates as any).credit[installments]
   }
 
-  // FÓRMULA: Valor a Cobrar = Valor Desejado ÷ (1 - Taxa)
-  // Exemplo: R$ 5000 ÷ (1 - 0.103) = R$ 5574,14
-  const chargeAmount = desiredNetAmount / (1 - feePercentage / 100)
+  // FÓRMULA: Valor a Cobrar = Valor Desejado ÷ (1 - Taxa ÷ 100)
+  // Exemplo: 5000 ÷ (1 - 12.64 ÷ 100) = 5000 ÷ (1 - 0.1264) = 5000 ÷ 0.8736
+  const chargeAmountRaw = desiredNetAmount / (1 - feePercentage / 100)
+
+  // Arredondar para cima para garantir que o valor recebido seja exato
+  const chargeAmount = Math.ceil(chargeAmountRaw * 100) / 100
   const feeAmount = chargeAmount - desiredNetAmount
+
+  console.log("[v0] Cálculo simplificado:", {
+    desiredNetAmount,
+    feePercentage: `${feePercentage}%`,
+    passo1_subtracao: `1 - ${feePercentage}/100 = ${1 - feePercentage / 100}`,
+    passo2_divisao: `${desiredNetAmount} / ${1 - feePercentage / 100} = ${chargeAmountRaw}`,
+    chargeAmountRaw,
+    chargeAmount_arredondado: chargeAmount,
+    feeAmount,
+  })
 
   return {
     desiredNetAmount,
