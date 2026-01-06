@@ -287,7 +287,7 @@ export function calculateSaleValue(
   }
 
   // Calculate total with fee included
-  const totalAmount = baseAmount * (1 + feePercentage / 100)
+  const totalAmount = baseAmount * (1 - feePercentage / 100)
   const installmentValue = totalAmount / installments
 
   return {
