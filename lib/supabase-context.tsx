@@ -26,6 +26,7 @@ interface SupabaseContextType {
   notifications: Notification[]
   clients: Profile[]
   balanceAdjustments: BalanceAdjustment[]
+  customPlans: Array<{ id: string; name: string; created_at: string }>
   // Transaction actions
   addTransaction: (data: {
     grossValue: number
@@ -70,10 +71,34 @@ interface SupabaseContextType {
   registerChargeback: (transactionId: string, reason: string) => Promise<void>
   // Transaction approval actions
   approveWithoutReceipt: (transactionId: string) => Promise<void>
+  createCustomPlan: (data: {
+    name: string
+    rates: Array<{
+      brand_group: "VISA_MASTER" | "ELO_AMEX"
+      payment_type: "debit" | "credit" | "pix_conta" | "pix_qrcode"
+      installments: number | null
+      rate: number
+    }>
+  }) => Promise<string>
+  updateCustomPlan: (
+    planId: string,
+    data: {
+      name?: string
+      rates?: Array<{
+        brand_group: "VISA_MASTER" | "ELO_AMEX"
+        payment_type: "debit" | "credit" | "pix_conta" | "pix_qrcode"
+        installments: number | null
+        rate: number
+      }>
+    },
+  ) => Promise<void>
+  deleteCustomPlan: (planId: string) => Promise<void>
+  fetchCustomPlans: () => Promise<Array<{ id: string; name: string; created_at: string }>>
   // Refresh data
   refreshData: () => Promise<void>
   // Logout
   logout: () => Promise<void>
+  supabase: any
 }
 
 const SupabaseContext = createContext<SupabaseContextType | null>(null)
@@ -87,6 +112,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [clients, setClients] = useState<Profile[]>([])
   const [balanceAdjustments, setBalanceAdjustments] = useState<BalanceAdjustment[]>([])
+  const [customPlans, setCustomPlans] = useState<Array<{ id: string; name: string; created_at: string }>>([])
 
   const supabase = createClient()
 
@@ -197,6 +223,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         setNotifications([])
         setClients([])
         setBalanceAdjustments([])
+        setCustomPlans([])
       }
     })
 
@@ -563,7 +590,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
 
     // Notifica o cliente sobre o plano atribuído
     const planNames: Record<string, string> = {
-      basico: "Básico",
+      basic: "Básico",
       intermediario: "Intermediário",
       top: "Top",
     }
@@ -581,126 +608,144 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     await refreshData()
   }
 
+  const createCustomPlan = async (data: {
+    name: string
+    rates: Array<{
+      brand_group: "VISA_MASTER" | "ELO_AMEX"
+      payment_type: "debit" | "credit" | "pix_conta" | "pix_qrcode"
+      installments: number | null
+      rate: number
+    }>
+  }): Promise<string> => {
+    if (!user || profile?.role !== "admin") {
+      throw new Error("Apenas administradores podem criar planos personalizados")
+    }
+
+    console.log("[v0] Criando plano personalizado:", data.name)
+
+    // Criar o plano
+    const { data: planData, error: planError } = await supabase
+      .from("custom_plans")
+      .insert({
+        name: data.name,
+        created_by: user.id,
+      })
+      .select()
+      .single()
+
+    if (planError || !planData) {
+      console.error("[v0] Erro ao criar plano:", planError)
+      throw new Error(planError?.message || "Erro ao criar plano")
+    }
+
+    console.log("[v0] Plano criado:", planData.id)
+
+    // Inserir todas as taxas
+    const ratesData = data.rates.map((rate) => ({
+      plan_id: planData.id,
+      brand_group: rate.brand_group,
+      payment_type: rate.payment_type,
+      installments: rate.installments,
+      rate: rate.rate,
+    }))
+
+    const { error: ratesError } = await supabase.from("custom_plan_rates").insert(ratesData)
+
+    if (ratesError) {
+      console.error("[v0] Erro ao inserir taxas:", ratesError)
+      // Rollback: deletar o plano criado
+      await supabase.from("custom_plans").delete().eq("id", planData.id)
+      throw new Error(ratesError.message || "Erro ao criar taxas do plano")
+    }
+
+    console.log("[v0] Plano personalizado criado com sucesso!")
+    await refreshData()
+    return planData.id
+  }
+
+  const updateCustomPlan = async (
+    planId: string,
+    data: {
+      name?: string
+      rates?: Array<{
+        brand_group: "VISA_MASTER" | "ELO_AMEX"
+        payment_type: "debit" | "credit" | "pix_conta" | "pix_qrcode"
+        installments: number | null
+        rate: number
+      }>
+    },
+  ) => {
+    if (!user || profile?.role !== "admin") {
+      throw new Error("Apenas administradores podem editar planos personalizados")
+    }
+
+    // Update name if provided
+    if (data.name) {
+      const { error: nameError } = await supabase
+        .from("custom_plans")
+        .update({ name: data.name, updated_at: new Date().toISOString() })
+        .eq("id", planId)
+
+      if (nameError) throw nameError
+    }
+
+    // Update rates if provided
+    if (data.rates) {
+      // Delete existing rates
+      await supabase.from("custom_plan_rates").delete().eq("plan_id", planId)
+
+      // Insert new rates
+      const ratesData = data.rates.map((rate) => ({
+        plan_id: planId,
+        brand_group: rate.brand_group,
+        payment_type: rate.payment_type,
+        installments: rate.installments,
+        rate: rate.rate,
+      }))
+
+      const { error: ratesError } = await supabase.from("custom_plan_rates").insert(ratesData)
+      if (ratesError) throw ratesError
+    }
+
+    await refreshData()
+  }
+
+  const deleteCustomPlan = async (planId: string) => {
+    if (!user || profile?.role !== "admin") {
+      throw new Error("Apenas administradores podem deletar planos personalizados")
+    }
+
+    // Check if any clients are using this plan
+    const { data: clientsUsingPlan } = await supabase.from("profiles").select("id").eq("plan", planId).limit(1)
+
+    if (clientsUsingPlan && clientsUsingPlan.length > 0) {
+      throw new Error("Não é possível deletar um plano que está sendo usado por clientes")
+    }
+
+    const { error } = await supabase.from("custom_plans").delete().eq("id", planId)
+    if (error) throw error
+
+    await refreshData()
+  }
+
+  const fetchCustomPlans = async () => {
+    const { data, error } = await supabase
+      .from("custom_plans")
+      .select("id, name, created_at")
+      .eq("is_active", true)
+      .order("created_at", { ascending: false })
+
+    if (error) {
+      console.error("[v0] Erro ao buscar planos personalizados:", error)
+      return []
+    }
+
+    return data || []
+  }
+
   const logout = async () => {
     await supabase.auth.signOut()
     window.location.href = "/auth/login"
-  }
-
-  const addBalanceAdjustment = async (userId: string, type: AdjustmentType, amount: number, reason: string) => {
-    if (!user || profile?.role !== "admin") return
-
-    const { error } = await supabase.from("balance_adjustments").insert({
-      user_id: userId,
-      admin_id: user.id,
-      type,
-      amount,
-      reason,
-    })
-
-    if (error) throw error
-
-    // Notifica o cliente
-    const client = clients.find((c) => c.id === userId)
-    await supabase.from("notifications").insert({
-      user_id: userId,
-      type: type === "add" ? "plan_assigned" : "receipt_rejected",
-      title: type === "add" ? "Saldo Adicionado" : "Saldo Removido",
-      message:
-        type === "add"
-          ? `O gestor adicionou R$ ${amount.toFixed(2)} ao seu saldo. Motivo: ${reason}`
-          : `O gestor removeu R$ ${amount.toFixed(2)} do seu saldo. Motivo: ${reason}`,
-    })
-
-    await refreshData()
-  }
-
-  const registerChargeback = async (transactionId: string, reason: string) => {
-    if (!user) return
-
-    try {
-      const transaction = transactions.find((t) => t.id === transactionId)
-      if (!transaction) {
-        throw new Error("Transação não encontrada")
-      }
-
-      console.log("[v0] Iniciando estorno da transação:", transactionId)
-
-      // Apenas atualizar o status para 'chargeback' - trigger do banco desconta do saldo automaticamente
-      const { error: updateError } = await supabase
-        .from("transactions")
-        .update({
-          status: "chargeback",
-          chargeback_reason: reason,
-          chargeback_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", transactionId)
-
-      if (updateError) {
-        console.error("[v0] Erro ao atualizar transação:", updateError)
-        throw updateError
-      }
-
-      console.log("[v0] Transação marcada como estornada - trigger do banco ajustará o saldo")
-
-      // Criar notificação para o cliente se for admin
-      if (profile?.role === "admin") {
-        await supabase.from("notifications").insert({
-          user_id: transaction.user_id,
-          type: "receipt_rejected",
-          title: "Estorno Registrado",
-          message: `Estorno de R$ ${transaction.net_value.toFixed(2)}. Motivo: ${reason}`,
-          related_id: transactionId,
-        })
-      }
-
-      // Atualizar estado local
-      setTransactions((prev) =>
-        prev.map((t) =>
-          t.id === transactionId
-            ? { ...t, status: "chargeback", chargeback_reason: reason, chargeback_at: new Date().toISOString() }
-            : t,
-        ),
-      )
-
-      // Recarregar saldo do banco (trigger já atualizou)
-      await fetchBalance()
-
-      console.log("[v0] Estorno concluído - saldo atualizado pelo trigger do banco")
-    } catch (error) {
-      console.error("[v0] Erro ao registrar estorno:", error)
-      throw error
-    }
-  }
-
-  const approveWithoutReceipt = async (transactionId: string) => {
-    if (!user || profile?.role !== "admin") return
-
-    const transaction = transactions.find((t) => t.id === transactionId)
-    if (!transaction) return
-
-    const { error } = await supabase
-      .from("transactions")
-      .update({
-        status: "verified",
-        verified_at: new Date().toISOString(),
-        verified_by: user.id,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", transactionId)
-
-    if (error) throw error
-
-    // Notifica o cliente
-    await supabase.from("notifications").insert({
-      user_id: transaction.user_id,
-      type: "receipt_verified",
-      title: "Transação Aprovada",
-      message: `Sua transação foi aprovada sem comprovante. O valor já está disponível para saque.`,
-      related_id: transactionId,
-    })
-
-    await refreshData()
   }
 
   const fetchBalance = useCallback(async () => {
@@ -717,6 +762,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       notifications,
       clients,
       balanceAdjustments,
+      customPlans,
       addTransaction,
       updateTransaction,
       uploadReceipt,
@@ -729,13 +775,15 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       getClientBalances,
       updateProfile,
       assignClientPlan,
-      addBalanceAdjustment,
-      registerChargeback,
-      approveWithoutReceipt,
+      createCustomPlan,
+      updateCustomPlan,
+      deleteCustomPlan,
+      fetchCustomPlans,
       refreshData,
       logout,
+      supabase: createClient(),
     }),
-    [user, profile, isLoading, transactions, withdrawals, notifications, clients, balanceAdjustments],
+    [user, profile, isLoading, transactions, withdrawals, notifications, clients, balanceAdjustments, customPlans],
   )
 
   return <SupabaseContext.Provider value={contextValue}>{children}</SupabaseContext.Provider>

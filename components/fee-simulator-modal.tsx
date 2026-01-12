@@ -1,5 +1,5 @@
 "use client"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { X, Calculator } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { useSupabase } from "@/lib/supabase-context"
 import { calculateChargeValue, calculateSaleValue, formatCurrency, formatPercentage } from "@/lib/pos-rates"
-import type { CardBrand, PaymentType, PlanType } from "@/lib/types"
+import type { CardBrand, PaymentType, PlanType, CustomPlanRate } from "@/lib/types"
 
 interface FeeSimulatorModalProps {
   open: boolean
@@ -17,14 +17,62 @@ interface FeeSimulatorModalProps {
 type SimulationMode = "receive" | "sale"
 
 export function FeeSimulatorModal({ open, onOpenChange }: FeeSimulatorModalProps) {
-  const { profile } = useSupabase()
+  const { profile, supabase } = useSupabase()
   const [grossValue, setGrossValue] = useState("")
   const [brand, setBrand] = useState<CardBrand>("visa")
   const [paymentType, setPaymentType] = useState<PaymentType>("debit")
   const [installments, setInstallments] = useState(1)
   const [mode, setMode] = useState<SimulationMode>("receive")
+  const [customRates, setCustomRates] = useState<CustomPlanRate[]>([])
+  const [customPlanName, setCustomPlanName] = useState<string>("")
+  const [isLoadingRates, setIsLoadingRates] = useState(false)
 
   const clientPlan = profile?.plan as PlanType | null
+
+  useEffect(() => {
+    async function fetchCustomPlanInfo() {
+      if (!supabase || !clientPlan) return
+
+      // Check if it's a custom plan (UUID format)
+      if (clientPlan !== "basic" && clientPlan !== "intermediario" && clientPlan !== "top") {
+        setIsLoadingRates(true)
+        try {
+          // Fetch custom plan name
+          const { data: planData } = await supabase.from("custom_plans").select("name").eq("id", clientPlan).single()
+
+          if (planData) {
+            setCustomPlanName(planData.name)
+          }
+
+          // Fetch custom rates
+          const { data: ratesData, error } = await supabase
+            .from("custom_plan_rates")
+            .select("*")
+            .eq("plan_id", clientPlan)
+
+          if (error) {
+            console.error("[v0] Erro ao buscar taxas personalizadas:", error)
+            setCustomRates([])
+          } else {
+            console.log("[v0] Taxas personalizadas carregadas:", ratesData)
+            setCustomRates(ratesData || [])
+          }
+        } catch (err) {
+          console.error("[v0] Erro ao buscar informações do plano:", err)
+          setCustomRates([])
+        } finally {
+          setIsLoadingRates(false)
+        }
+      } else {
+        setCustomRates([])
+        setCustomPlanName("")
+      }
+    }
+
+    if (open) {
+      fetchCustomPlanInfo()
+    }
+  }, [open, clientPlan, supabase])
 
   const getBrandGroup = (cardBrand: CardBrand): "VISA_MASTER" | "ELO_AMEX" | "PIX" => {
     if (paymentType === "pix_conta" || paymentType === "pix_qrcode") {
@@ -41,17 +89,32 @@ export function FeeSimulatorModal({ open, onOpenChange }: FeeSimulatorModalProps
           paymentType,
           installments as any,
           clientPlan,
+          customRates.length > 0 ? customRates : undefined,
         )
       : null
 
   const saleCalculationVisa =
     grossValue && clientPlan && mode === "sale"
-      ? calculateSaleValue(Number.parseFloat(grossValue), "VISA_MASTER", paymentType, installments as any, clientPlan)
+      ? calculateSaleValue(
+          Number.parseFloat(grossValue),
+          "VISA_MASTER",
+          paymentType,
+          installments as any,
+          clientPlan,
+          customRates.length > 0 ? customRates : undefined,
+        )
       : null
 
   const saleCalculationElo =
     grossValue && clientPlan && mode === "sale"
-      ? calculateSaleValue(Number.parseFloat(grossValue), "ELO_AMEX", paymentType, installments as any, clientPlan)
+      ? calculateSaleValue(
+          Number.parseFloat(grossValue),
+          "ELO_AMEX",
+          paymentType,
+          installments as any,
+          clientPlan,
+          customRates.length > 0 ? customRates : undefined,
+        )
       : null
 
   if (!open) return null
@@ -85,11 +148,13 @@ export function FeeSimulatorModal({ open, onOpenChange }: FeeSimulatorModalProps
                 <p className="text-xs text-muted-foreground">
                   Plano:{" "}
                   {clientPlan
-                    ? clientPlan === "basico"
+                    ? clientPlan === "basic"
                       ? "Básico"
                       : clientPlan === "intermediario"
                         ? "Intermediário"
-                        : "Master"
+                        : clientPlan === "top"
+                          ? "Master"
+                          : customPlanName || "Personalizado"
                     : "Nenhum"}
                 </p>
               </div>

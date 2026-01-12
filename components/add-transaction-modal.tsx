@@ -25,6 +25,8 @@ import { VoiceAssistantButton } from "@/components/voice-assistant-button"
 import { ReceiptReaderButton } from "@/components/receipt-reader-button"
 import { Textarea } from "@/components/ui/textarea"
 import type { VoiceCommand, ReceiptData } from "@/app/actions/voice-assistant"
+import { createClient } from "@/lib/supabase/client"
+import type { CustomPlanRate } from "@/lib/types"
 
 interface AddTransactionModalProps {
   open: boolean
@@ -46,6 +48,9 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
   const [isProcessingImage, setIsProcessingImage] = useState(false)
   const [isDragging, setIsDragging] = useState(false) // Added dragging state
   const fileInputRef = React.createRef<HTMLInputElement>()
+  const [customRates, setCustomRates] = useState<CustomPlanRate[]>([])
+  const [isLoadingRates, setIsLoadingRates] = useState(false)
+  const [success, setSuccess] = useState(false)
 
   useEffect(() => {
     if (open) {
@@ -155,32 +160,61 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
     if (isNaN(amount)) return null
 
     console.log("[v0] Calculating fee with:", { amount, brand, paymentType, installments, clientPlan })
-    const result = calculateFee(amount, brand, paymentType, installments, clientPlan)
+    const result = calculateFee(
+      amount,
+      brand,
+      paymentType,
+      installments,
+      clientPlan,
+      customRates.length > 0 ? customRates : undefined,
+    )
     console.log("[v0] Calculation result:", result)
     return result
-  }, [grossAmount, brand, paymentType, installments, clientPlan])
+  }, [grossAmount, brand, paymentType, installments, clientPlan, customRates])
 
   const planRates = clientPlan ? PLAN_RATES[clientPlan] : null
 
   const handleSubmit = async () => {
+    if (!numericAmount || numericAmount <= 0) return
+
     setIsSubmitting(true)
     setError(null)
-    try {
-      const brandValue = brand === "VISA_MASTER" ? "visa_master" : brand === "ELO_AMEX" ? "elo_amex" : "pix"
-      const receiptUrl = receiptFile ? URL.createObjectURL(receiptFile) : undefined
 
-      await addTransaction({
-        grossValue: calculation.grossAmount,
-        brand: brandValue,
+    try {
+      console.log("[v0] Calculating fee with:", {
+        amount: numericAmount,
+        brand: brand,
         paymentType,
         installments,
-        receiptUrl,
-        noReceiptReason: !receiptFile ? noReceiptReason || "Comprovante será enviado posteriormente" : undefined,
+        clientPlan,
       })
 
-      handleReset()
-      onOpenChange(false)
+      const feeCalculation = calculateFee(
+        numericAmount,
+        brand,
+        paymentType === "pix_qrcode" ? "pix_qrcode" : paymentType === "pix_conta" ? "pix_conta" : paymentType,
+        installments,
+        clientPlan,
+        customRates.length > 0 ? customRates : undefined,
+      )
+
+      console.log("[v0] Fee calculation result:", feeCalculation)
+
+      await addTransaction({
+        grossValue: feeCalculation.grossAmount,
+        brand: brand === "PIX" ? "pix" : brand === "VISA_MASTER" ? "visa_master" : "elo_amex",
+        paymentType:
+          paymentType === "pix_qrcode" ? "pix_qrcode" : paymentType === "pix_conta" ? "pix_conta" : paymentType,
+        installments,
+        receiptUrl: receiptFile ? URL.createObjectURL(receiptFile) : undefined,
+        noReceiptReason: !receiptFile && noReceiptReason ? noReceiptReason : undefined,
+      })
+
+      handleClose()
+      setSuccess(true)
+      setTimeout(() => setSuccess(false), 3000)
     } catch (err) {
+      console.error("[v0] Erro ao adicionar transação:", err)
       setError(err instanceof Error ? err.message : "Erro ao adicionar transação")
     } finally {
       setIsSubmitting(false)
@@ -196,6 +230,7 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
     setReceiptFile(null)
     setError(null)
     setNoReceiptReason("")
+    setCustomRates([])
   }
 
   const handleClose = () => {
@@ -269,6 +304,47 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
     },
     [step, numericAmount, brand, paymentType],
   )
+
+  useEffect(() => {
+    async function fetchCustomRates() {
+      if (!clientPlan || !open) return
+
+      // Check if it's a custom plan (UUID format)
+      if (clientPlan !== "basic" && clientPlan !== "intermediario" && clientPlan !== "top") {
+        setIsLoadingRates(true)
+        try {
+          const supabase = createClient()
+          const { data, error } = await supabase.from("custom_plan_rates").select("*").eq("plan_id", clientPlan)
+
+          if (error) {
+            console.error("[v0] Erro ao buscar taxas personalizadas:", error)
+            setCustomRates([])
+          } else {
+            console.log("[v0] Taxas personalizadas carregadas para transação:", data)
+            setCustomRates(data || [])
+          }
+        } catch (err) {
+          console.error("[v0] Erro ao buscar taxas:", err)
+          setCustomRates([])
+        } finally {
+          setIsLoadingRates(false)
+        }
+      } else {
+        setCustomRates([])
+      }
+    }
+
+    fetchCustomRates()
+  }, [open, clientPlan])
+
+  const getBrandGroup = (): BrandGroup => {
+    return brand === "PIX" ? "PIX" : brand === "VISA_MASTER" ? "VISA_MASTER" : "ELO_AMEX"
+  }
+
+  const uploadReceipt = async (): Promise<string> => {
+    // Placeholder for receipt upload logic
+    return ""
+  }
 
   if (!clientPlan) {
     return (

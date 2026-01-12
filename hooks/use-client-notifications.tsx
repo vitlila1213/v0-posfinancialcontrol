@@ -20,13 +20,13 @@ export function useClientNotifications(userId: string | undefined) {
       try {
         const { data, error } = await supabase
           .from("transactions")
-          .select("id, amount, type, status, created_at")
-          .eq("client_id", userId)
+          .select("id, gross_value, status, created_at")
+          .eq("user_id", userId)
           .gte("created_at", lastCheckRef.current.toISOString())
           .order("created_at", { ascending: false })
 
         if (error) {
-          console.error("[v0] Error checking transactions:", error)
+          console.error("[v0] Error checking transactions:", error.message)
           return
         }
 
@@ -39,19 +39,14 @@ export function useClientNotifications(userId: string | undefined) {
             console.log("[v0] New transactions detected:", newTransactions.length)
 
             for (const transaction of newTransactions) {
-              let message = ""
-              if (transaction.type === "deposit") {
-                message = `Depósito de R$ ${transaction.amount.toFixed(2)}`
-              } else if (transaction.type === "withdrawal") {
-                message = `Saque de R$ ${transaction.amount.toFixed(2)}`
-              }
+              let message = `Nova transação de R$ ${transaction.gross_value.toFixed(2)}`
 
               if (transaction.status === "pending") {
-                message += " - Aguardando aprovação"
-              } else if (transaction.status === "approved") {
-                message += " - Aprovado!"
+                message += " - Aguardando verificação"
+              } else if (transaction.status === "verified") {
+                message += " - Verificada!"
               } else if (transaction.status === "rejected") {
-                message += " - Rejeitado"
+                message += " - Rejeitada"
               }
 
               await playNotification("Nova Transação", message)

@@ -15,33 +15,19 @@ export function useAdminNotifications(userId: string | undefined, isAdmin: boole
 
     console.log("[v0] Starting admin notifications monitoring")
 
-    // Function to check for new pending transactions/receipts
     const checkNewPendingItems = async () => {
       try {
         // Check for new pending transactions
         const { data: transactions, error: txError } = await supabase
           .from("transactions")
-          .select("id, amount, type, created_at, profiles!transactions_client_id_fkey(name)")
+          .select("id, gross_value, payment_type, created_at, user_id")
           .eq("status", "pending")
           .gte("created_at", lastCheckRef.current.toISOString())
           .order("created_at", { ascending: false })
 
         if (txError) {
-          console.error("[v0] Error checking pending transactions:", txError)
-        }
-
-        // Check for new pending receipts
-        const { data: receipts, error: rcError } = await supabase
-          .from("receipts")
-          .select(
-            "id, transaction_id, created_at, transactions(amount, type, profiles!transactions_client_id_fkey(name))",
-          )
-          .eq("status", "pending")
-          .gte("created_at", lastCheckRef.current.toISOString())
-          .order("created_at", { ascending: false })
-
-        if (rcError) {
-          console.error("[v0] Error checking pending receipts:", rcError)
+          console.error("[v0] Error checking pending transactions:", txError.message)
+          return
         }
 
         const now = new Date()
@@ -55,26 +41,21 @@ export function useAdminNotifications(userId: string | undefined, isAdmin: boole
             hasNewItems = true
             console.log("[v0] New pending transactions detected:", newTx.length)
 
-            const clientName = newTx[0].profiles?.name || "Cliente"
-            const txType = newTx[0].type === "deposit" ? "Depósito" : "Saque"
-            const amount = newTx[0].amount.toFixed(2)
+            // Get user name separately
+            const { data: userProfile } = await supabase
+              .from("profiles")
+              .select("full_name")
+              .eq("id", newTx[0].user_id)
+              .single()
 
-            await playNotification("Nova Transação Pendente", `${clientName}: ${txType} de R$ ${amount}`)
-          }
-        }
+            const clientName = userProfile?.full_name || "Cliente"
+            const txType = newTx[0].payment_type === "debit" ? "Débito" : "Transação"
+            const amount = newTx[0].gross_value || 0
 
-        // Notify about new receipts
-        if (receipts && receipts.length > 0) {
-          const newRc = receipts.filter((r) => new Date(r.created_at) > lastCheckRef.current)
-
-          if (newRc.length > 0) {
-            hasNewItems = true
-            console.log("[v0] New pending receipts detected:", newRc.length)
-
-            const clientName = newRc[0].transactions?.profiles?.name || "Cliente"
-            const amount = newRc[0].transactions?.amount?.toFixed(2) || "0.00"
-
-            await playNotification("Novo Comprovante Pendente", `${clientName}: Comprovante de R$ ${amount}`)
+            await playNotification(
+              "Nova Transação Pendente",
+              `${clientName}: ${txType} de R$ ${Number(amount).toFixed(2)}`,
+            )
           }
         }
 

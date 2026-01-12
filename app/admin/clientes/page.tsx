@@ -14,6 +14,9 @@ import {
   Download,
   Calendar,
   DollarSign,
+  Plus,
+  Edit,
+  Trash2,
 } from "lucide-react"
 import { useSupabase } from "@/lib/supabase-context"
 import { GlassCard } from "@/components/glass-card"
@@ -21,7 +24,7 @@ import { Input } from "@/components/ui/input"
 import { AnimatedNumber } from "@/components/animated-number"
 import { formatCurrency, PLAN_NAMES, type PlanType } from "@/lib/pos-rates"
 import { motion, AnimatePresence } from "framer-motion"
-import type { Profile, Transaction } from "@/lib/types"
+import type { Profile, Transaction, CustomPlan } from "@/lib/types" // Added CustomPlan type
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { Calendar as CalendarComponent } from "@/components/ui/calendar"
@@ -31,10 +34,13 @@ import { ptBR } from "date-fns/locale"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 import { BalanceAdjustmentModal } from "@/components/balance-adjustment-modal"
+import { CustomPlanModal } from "@/components/custom-plan-modal" // Import custom plan modal
+import { createClient } from "@/lib/supabase/client" // Import supabase client
 
 export default function AdminClientesPage() {
   const { clients, transactions, getClientBalances, assignClientPlan, isLoading } = useSupabase()
   const [search, setSearch] = useState("")
+  const [planFilter, setPlanFilter] = useState<string | null>(null) // Added plan filter state
   const [selectedClient, setSelectedClient] = useState<Profile | null>(null)
   const [adjustmentClient, setAdjustmentClient] = useState<Profile | null>(null)
   const [planModalClient, setPlanModalClient] = useState<Profile | null>(null)
@@ -42,6 +48,29 @@ export default function AdminClientesPage() {
   const [isAssigning, setIsAssigning] = useState(false)
   const [assignError, setAssignError] = useState<string | null>(null)
   const [dateRange, setDateRange] = useState({ from: undefined, to: undefined })
+  const [customPlans, setCustomPlans] = useState<CustomPlan[]>([])
+  const [showCustomPlanModal, setShowCustomPlanModal] = useState(false)
+  const [isLoadingPlans, setIsLoadingPlans] = useState(false)
+  const [editingPlan, setEditingPlan] = useState<CustomPlan | null>(null)
+
+  useEffect(() => {
+    fetchCustomPlans()
+  }, [])
+
+  const fetchCustomPlans = async () => {
+    setIsLoadingPlans(true)
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase.from("custom_plans").select("*").order("created_at", { ascending: false })
+
+      if (error) throw error
+      setCustomPlans((data as CustomPlan[]) || [])
+    } catch (error) {
+      console.error("[v0] Error fetching custom plans:", error)
+    } finally {
+      setIsLoadingPlans(false)
+    }
+  }
 
   useEffect(() => {
     if (selectedClient || planModalClient) {
@@ -68,9 +97,22 @@ export default function AdminClientesPage() {
   }
 
   const filteredClients = clients.filter((c) => {
-    if (!search) return true
-    const searchLower = search.toLowerCase()
-    return c.full_name?.toLowerCase().includes(searchLower) || c.email.toLowerCase().includes(searchLower)
+    // Filter by search
+    if (search) {
+      const searchLower = search.toLowerCase()
+      const matchesSearch =
+        c.full_name?.toLowerCase().includes(searchLower) ||
+        c.email?.toLowerCase().includes(searchLower) ||
+        c.phone?.includes(search)
+      if (!matchesSearch) return false
+    }
+
+    // Filter by plan
+    if (planFilter) {
+      if (c.plan !== planFilter) return false
+    }
+
+    return true
   })
 
   // Separar clientes por status de plano
@@ -257,6 +299,17 @@ export default function AdminClientesPage() {
     setPlanModalClient(client)
     setSelectedPlan(client.plan)
     setAssignError(null)
+    setEditingPlan(null) // Clear editing state when opening new plan modal
+  }
+
+  const getPlanDisplayName = (planId: PlanType): string => {
+    if (!planId) return "Sem Plano"
+    if (planId === "top" || planId === "intermediario" || planId === "basic") {
+      return PLAN_NAMES[planId]
+    }
+    // Custom plan - find by UUID
+    const customPlan = customPlans.find((p) => p.id === planId)
+    return customPlan?.name || "Plano Personalizado"
   }
 
   const getPlanBadgeColor = (plan: PlanType) => {
@@ -265,11 +318,43 @@ export default function AdminClientesPage() {
         return "bg-emerald-500/20 text-emerald-500 border-emerald-500/30"
       case "intermediario":
         return "bg-blue-500/20 text-blue-500 border-blue-500/30"
-      case "basico":
+      case "basic":
         return "bg-amber-500/20 text-amber-500 border-amber-500/30"
       default:
-        return "bg-rose-500/20 text-rose-500 border-rose-500/30"
+        // Custom plan
+        return "bg-purple-500/20 text-purple-500 border-purple-500/30"
     }
+  }
+
+  const handleDeleteCustomPlan = async (planId: string) => {
+    if (!confirm("Tem certeza que deseja deletar este plano personalizado?")) return
+
+    try {
+      const supabase = createClient()
+
+      // Check if any clients are using this plan
+      const { data: clientsUsingPlan } = await supabase.from("profiles").select("id, full_name").eq("plan", planId)
+
+      if (clientsUsingPlan && clientsUsingPlan.length > 0) {
+        alert(`Não é possível deletar este plano. ${clientsUsingPlan.length} cliente(s) estão usando este plano.`)
+        return
+      }
+
+      const { error } = await supabase.from("custom_plans").delete().eq("id", planId)
+      if (error) throw error
+
+      await fetchCustomPlans()
+      alert("Plano deletado com sucesso!")
+    } catch (error) {
+      console.error("[v0] Erro ao deletar plano:", error)
+      alert("Erro ao deletar plano personalizado")
+    }
+  }
+
+  const handleEditCustomPlan = (plan: CustomPlan) => {
+    setEditingPlan(plan)
+    setShowCustomPlanModal(true)
+    setPlanModalClient(null)
   }
 
   return (
@@ -333,18 +418,82 @@ export default function AdminClientesPage() {
 
       {/* Todos os clientes */}
       <GlassCard className="p-4 sm:p-6">
-        <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <h3 className="text-base font-semibold text-foreground sm:text-lg">
-            Clientes Ativos ({clientsWithPlan.length})
-          </h3>
-          <div className="relative w-full sm:w-64">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Buscar cliente..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="border-white/10 bg-white/5 pl-9"
-            />
+        <div className="mb-4 space-y-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <h3 className="text-base font-semibold text-foreground sm:text-lg">
+              Clientes Ativos ({clientsWithPlan.length})
+            </h3>
+            <div className="relative w-full sm:w-64">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Buscar cliente..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="border-white/10 bg-white/5 pl-9"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-muted-foreground">Filtrar por plano:</span>
+            <button
+              onClick={() => setPlanFilter(null)}
+              className={cn(
+                "rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
+                !planFilter
+                  ? "bg-white/20 text-foreground"
+                  : "bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground",
+              )}
+            >
+              Todos
+            </button>
+            <button
+              onClick={() => setPlanFilter("top")}
+              className={cn(
+                "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                planFilter === "top"
+                  ? "border-emerald-500 bg-emerald-500/20 text-emerald-500"
+                  : "border-white/10 bg-white/5 text-muted-foreground hover:border-emerald-500/50 hover:bg-emerald-500/10 hover:text-emerald-500",
+              )}
+            >
+              Master
+            </button>
+            <button
+              onClick={() => setPlanFilter("intermediario")}
+              className={cn(
+                "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                planFilter === "intermediario"
+                  ? "border-blue-500 bg-blue-500/20 text-blue-500"
+                  : "border-white/10 bg-white/5 text-muted-foreground hover:border-blue-500/50 hover:bg-blue-500/10 hover:text-blue-500",
+              )}
+            >
+              Intermediário
+            </button>
+            <button
+              onClick={() => setPlanFilter("basic")}
+              className={cn(
+                "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                planFilter === "basic"
+                  ? "border-amber-500 bg-amber-500/20 text-amber-500"
+                  : "border-white/10 bg-white/5 text-muted-foreground hover:border-amber-500/50 hover:bg-amber-500/10 hover:text-amber-500",
+              )}
+            >
+              Básico
+            </button>
+            {customPlans.map((plan) => (
+              <button
+                key={plan.id}
+                onClick={() => setPlanFilter(plan.id)}
+                className={cn(
+                  "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                  planFilter === plan.id
+                    ? "border-purple-500 bg-purple-500/20 text-purple-500"
+                    : "border-white/10 bg-white/5 text-muted-foreground hover:border-purple-500/50 hover:bg-purple-500/10 hover:text-purple-500",
+                )}
+              >
+                {plan.name}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -380,7 +529,7 @@ export default function AdminClientesPage() {
                             getPlanBadgeColor(client.plan),
                           )}
                         >
-                          {client.plan ? PLAN_NAMES[client.plan] : "Sem Plano"}
+                          {client.plan ? getPlanDisplayName(client.plan) : "Sem Plano"}
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground">{client.email}</p>
@@ -437,6 +586,21 @@ export default function AdminClientesPage() {
       {/* Balance Adjustment Modal */}
       {adjustmentClient && (
         <BalanceAdjustmentModal client={adjustmentClient} onClose={() => setAdjustmentClient(null)} />
+      )}
+
+      {showCustomPlanModal && (
+        <CustomPlanModal
+          editingPlan={editingPlan}
+          onClose={() => {
+            setShowCustomPlanModal(false)
+            setEditingPlan(null)
+          }}
+          onSuccess={() => {
+            setShowCustomPlanModal(false)
+            setEditingPlan(null)
+            fetchCustomPlans()
+          }}
+        />
       )}
 
       {/* Plan Assignment Modal */}
@@ -519,7 +683,7 @@ export default function AdminClientesPage() {
                     <div className="flex items-center justify-between">
                       <div>
                         <div className="flex items-center gap-2">
-                          <Crown className="h-5 w-5 text-blue-500" />
+                          <TrendingUp className="h-5 w-5 text-blue-500" />
                           <span className="font-semibold text-foreground">Plano Intermediário</span>
                         </div>
                         <p className="mt-1 text-xs text-muted-foreground">
@@ -532,10 +696,10 @@ export default function AdminClientesPage() {
 
                   {/* Plano Básico */}
                   <button
-                    onClick={() => setSelectedPlan("basico")}
+                    onClick={() => setSelectedPlan("basic")}
                     className={cn(
                       "w-full rounded-xl border p-4 text-left transition-all",
-                      selectedPlan === "basico"
+                      selectedPlan === "basic"
                         ? "border-amber-500 bg-amber-500/10"
                         : "border-white/10 bg-white/5 hover:border-white/20",
                     )}
@@ -543,30 +707,112 @@ export default function AdminClientesPage() {
                     <div className="flex items-center justify-between">
                       <div>
                         <div className="flex items-center gap-2">
-                          <Crown className="h-5 w-5 text-amber-500" />
+                          <Wallet className="h-5 w-5 text-amber-500" />
                           <span className="font-semibold text-foreground">Plano Básico</span>
                         </div>
-                        <p className="mt-1 text-xs text-muted-foreground">Taxas padrão - Débito Visa/Master: 3,30%</p>
+                        <p className="mt-1 text-xs text-muted-foreground">Taxas padrão - Débito Visa/Master: 3,20%</p>
                       </div>
-                      {selectedPlan === "basico" && <Check className="h-5 w-5 text-amber-500" />}
+                      {selectedPlan === "basic" && <Check className="h-5 w-5 text-amber-500" />}
+                    </div>
+                  </button>
+
+                  {customPlans.length > 0 && (
+                    <>
+                      <div className="relative my-4">
+                        <div className="absolute inset-0 flex items-center">
+                          <div className="w-full border-t border-white/10"></div>
+                        </div>
+                        <div className="relative flex justify-center text-xs uppercase">
+                          <span className="bg-slate-900 px-2 text-muted-foreground">Planos Personalizados</span>
+                        </div>
+                      </div>
+
+                      {customPlans.map((customPlan) => (
+                        <button
+                          key={customPlan.id}
+                          onClick={() => setSelectedPlan(customPlan.id)}
+                          className={cn(
+                            "w-full rounded-xl border p-4 text-left transition-all",
+                            selectedPlan === customPlan.id
+                              ? "border-purple-500 bg-purple-500/10"
+                              : "border-white/10 bg-white/5 hover:border-white/20",
+                          )}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <Crown className="h-5 w-5 text-purple-500" />
+                                <span className="font-semibold text-foreground">{customPlan.name}</span>
+                              </div>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Plano personalizado - Criado em {format(new Date(customPlan.created_at), "dd/MM/yyyy")}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {selectedPlan === customPlan.id && <Check className="h-5 w-5 text-purple-500" />}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleEditCustomPlan(customPlan)
+                                }}
+                                className="rounded-lg p-1.5 text-blue-400 hover:bg-blue-500/20 transition-colors"
+                                title="Editar plano"
+                              >
+                                <Edit className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleDeleteCustomPlan(customPlan.id)
+                                }}
+                                className="rounded-lg p-1.5 text-rose-400 hover:bg-rose-500/20 transition-colors"
+                                title="Deletar plano"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </>
+                  )}
+
+                  <button
+                    onClick={() => {
+                      setPlanModalClient(null)
+                      setShowCustomPlanModal(true)
+                    }}
+                    className="w-full rounded-xl border border-dashed border-purple-500/50 bg-purple-500/5 p-4 text-left transition-all hover:border-purple-500 hover:bg-purple-500/10"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-500/20">
+                        <Plus className="h-5 w-5 text-purple-500" />
+                      </div>
+                      <div>
+                        <span className="font-semibold text-purple-400">Criar Plano Personalizado</span>
+                        <p className="text-xs text-muted-foreground">
+                          Configure taxas personalizadas para este cliente
+                        </p>
+                      </div>
                     </div>
                   </button>
                 </div>
 
                 <div className="mt-6 flex gap-3">
                   <Button
-                    variant="outline"
                     onClick={() => setPlanModalClient(null)}
+                    variant="outline"
                     className="flex-1 border-white/10 bg-white/5"
+                    disabled={isAssigning}
                   >
                     Cancelar
                   </Button>
                   <Button
                     onClick={handleAssignPlan}
-                    disabled={!selectedPlan || isAssigning}
                     className="flex-1 bg-emerald-500 text-white hover:bg-emerald-600"
+                    disabled={!selectedPlan || isAssigning}
                   >
-                    {isAssigning ? "Salvando..." : "Confirmar Plano"}
+                    {isAssigning ? "Atribuindo..." : "Confirmar Plano"}
                   </Button>
                 </div>
               </motion.div>
@@ -607,7 +853,7 @@ export default function AdminClientesPage() {
                             getPlanBadgeColor(selectedClient.plan),
                           )}
                         >
-                          {selectedClient.plan ? PLAN_NAMES[selectedClient.plan] : "Sem Plano"}
+                          {selectedClient.plan ? getPlanDisplayName(selectedClient.plan) : "Sem Plano"}
                         </span>
                       </div>
                       <p className="text-sm text-muted-foreground">{selectedClient.email}</p>

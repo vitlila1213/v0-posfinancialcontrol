@@ -12,7 +12,7 @@ export type Brand = "visa_master" | "elo_amex" | "pix"
 
 export type PaymentType = "debit" | "credit" | "pix_conta" | "pix_qrcode"
 
-export type PlanType = "basico" | "intermediario" | "top" | null
+export type PlanType = "basic" | "intermediario" | "top" | string | null
 
 export type AdjustmentType = "add" | "remove"
 
@@ -134,4 +134,27 @@ export interface Announcement {
   created_at: string
   created_by: string | null
   updated_at: string
+}
+
+export interface CustomPlan {
+  id: string
+  name: string
+  created_by: string
+  created_at: string
+  updated_at: string
+  is_active: boolean
+}
+
+export interface CustomPlanRate {
+  id: string
+  plan_id: string
+  brand_group: "VISA_MASTER" | "ELO_AMEX"
+  payment_type: "debit" | "credit" | "pix_conta" | "pix_qrcode"
+  installments: number | null
+  rate: number
+  created_at: string
+}
+
+export interface CustomPlanWithRates extends CustomPlan {
+  rates: CustomPlanRate[]
 }

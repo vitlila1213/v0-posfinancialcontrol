@@ -1,7 +1,7 @@
-export type PlanType = "basico" | "intermediario" | "top" | null
+export type PlanType = "basic" | "intermediario" | "top" | string | null
 
 export const PLAN_NAMES: Record<string, string> = {
-  basico: "Básico",
+  basic: "Básico",
   intermediario: "Intermediário",
   top: "Master",
 }
@@ -179,7 +179,7 @@ const PLANO_TOP = {
 
 // Mapeamento dos planos
 export const PLAN_RATES = {
-  basico: PLANO_BASICO,
+  basic: PLANO_BASICO,
   intermediario: PLANO_INTERMEDIARIO,
   top: PLANO_TOP,
 } as const
@@ -213,14 +213,39 @@ export interface SaleValueCalculation {
   installments: number // Número de parcelas
 }
 
+import type { CustomPlanRate } from "./types"
+
+export function getCustomPlanRate(
+  rates: CustomPlanRate[],
+  brandGroup: BrandGroup,
+  paymentType: PaymentType,
+  installments: Installments = 1,
+): number | null {
+  // Buscar taxa específica
+  const rate = rates.find((r) => {
+    if (r.brand_group !== brandGroup) return false
+    if (r.payment_type !== paymentType) return false
+
+    // Para crédito, precisa bater o número de parcelas
+    if (paymentType === "credit") {
+      return r.installments === installments
+    }
+
+    // Para outros tipos, installments é null
+    return r.installments === null
+  })
+
+  return rate ? rate.rate : null
+}
+
 export function calculateFee(
   grossAmount: number,
   brandGroup: BrandGroup,
   paymentType: PaymentType,
   installments: Installments = 1,
   plan: PlanType = "top",
+  customRates?: CustomPlanRate[],
 ): FeeCalculation {
-  // Se não tem plano atribuído, não pode calcular
   if (!plan) {
     return {
       grossAmount,
@@ -230,18 +255,34 @@ export function calculateFee(
     }
   }
 
-  const rates = PLAN_RATES[plan][brandGroup]
-
   let feePercentage: number
 
-  if (paymentType === "pix_conta") {
-    feePercentage = (rates as any).pix_conta
-  } else if (paymentType === "pix_qrcode") {
-    feePercentage = (rates as any).pix_qrcode
-  } else if (paymentType === "debit") {
-    feePercentage = (rates as any).debit
+  // Se é plano personalizado (UUID)
+  if (plan !== "basic" && plan !== "intermediario" && plan !== "top" && customRates) {
+    const customRate = getCustomPlanRate(customRates, brandGroup, paymentType, installments)
+    if (customRate === null) {
+      console.warn("[v0] Taxa não encontrada para plano personalizado")
+      return {
+        grossAmount,
+        netAmount: 0,
+        feeAmount: 0,
+        feePercentage: 0,
+      }
+    }
+    feePercentage = customRate
   } else {
-    feePercentage = (rates as any).credit[installments]
+    // Plano fixo (basic, intermediario, top)
+    const rates = PLAN_RATES[plan as "basic" | "intermediario" | "top"][brandGroup]
+
+    if (paymentType === "pix_conta") {
+      feePercentage = (rates as any).pix_conta
+    } else if (paymentType === "pix_qrcode") {
+      feePercentage = (rates as any).pix_qrcode
+    } else if (paymentType === "debit") {
+      feePercentage = (rates as any).debit
+    } else {
+      feePercentage = (rates as any).credit[installments]
+    }
   }
 
   const feeAmount = (grossAmount * feePercentage) / 100
@@ -261,6 +302,7 @@ export function calculateSaleValue(
   paymentType: PaymentType,
   installments: Installments = 1,
   plan: PlanType = "top",
+  customRates?: CustomPlanRate[],
 ): SaleValueCalculation {
   if (!plan) {
     return {
@@ -272,21 +314,67 @@ export function calculateSaleValue(
     }
   }
 
-  const rates = PLAN_RATES[plan][brandGroup]
-
   let feePercentage: number
 
-  if (paymentType === "pix_conta") {
-    feePercentage = (rates as any).pix_conta
-  } else if (paymentType === "pix_qrcode") {
-    feePercentage = (rates as any).pix_qrcode
-  } else if (paymentType === "debit") {
-    feePercentage = (rates as any).debit
+  // Se é plano personalizado (UUID)
+  if (plan !== "basic" && plan !== "intermediario" && plan !== "top") {
+    if (!customRates || customRates.length === 0) {
+      console.warn("[v0] Plano personalizado sem taxas carregadas")
+      return {
+        baseAmount,
+        feePercentage: 0,
+        totalAmount: baseAmount,
+        installmentValue: baseAmount,
+        installments: 1,
+      }
+    }
+
+    const customRate = getCustomPlanRate(customRates, brandGroup, paymentType, installments)
+    if (customRate === null) {
+      return {
+        baseAmount,
+        feePercentage: 0,
+        totalAmount: baseAmount,
+        installmentValue: baseAmount,
+        installments: 1,
+      }
+    }
+    feePercentage = customRate
   } else {
-    feePercentage = (rates as any).credit[installments]
+    // Plano fixo
+    const rates = PLAN_RATES[plan as "basic" | "intermediario" | "top"]
+    if (!rates) {
+      return {
+        baseAmount,
+        feePercentage: 0,
+        totalAmount: baseAmount,
+        installmentValue: baseAmount,
+        installments: 1,
+      }
+    }
+
+    const brandRates = rates[brandGroup]
+    if (!brandRates) {
+      return {
+        baseAmount,
+        feePercentage: 0,
+        totalAmount: baseAmount,
+        installmentValue: baseAmount,
+        installments: 1,
+      }
+    }
+
+    if (paymentType === "pix_conta") {
+      feePercentage = (brandRates as any).pix_conta
+    } else if (paymentType === "pix_qrcode") {
+      feePercentage = (brandRates as any).pix_qrcode
+    } else if (paymentType === "debit") {
+      feePercentage = (brandRates as any).debit
+    } else {
+      feePercentage = (brandRates as any).credit[installments]
+    }
   }
 
-  // Calculate total with fee included
   const totalAmount = baseAmount * (1 - feePercentage / 100)
   const installmentValue = totalAmount / installments
 
@@ -305,8 +393,8 @@ export function calculateChargeValue(
   paymentType: PaymentType,
   installments: Installments = 1,
   plan: PlanType = "top",
+  customRates?: CustomPlanRate[],
 ): ChargeValueCalculation {
-  // Se não tem plano atribuído, não pode calcular
   if (!plan) {
     return {
       desiredNetAmount,
@@ -316,37 +404,68 @@ export function calculateChargeValue(
     }
   }
 
-  const rates = PLAN_RATES[plan][brandGroup]
-
   let feePercentage: number
 
-  if (paymentType === "pix_conta") {
-    feePercentage = (rates as any).pix_conta
-  } else if (paymentType === "pix_qrcode") {
-    feePercentage = (rates as any).pix_qrcode
-  } else if (paymentType === "debit") {
-    feePercentage = (rates as any).debit
+  if (plan !== "basic" && plan !== "intermediario" && plan !== "top") {
+    if (!customRates || customRates.length === 0) {
+      console.warn("[v0] Plano personalizado sem taxas carregadas")
+      return {
+        desiredNetAmount,
+        feePercentage: 0,
+        chargeAmount: desiredNetAmount,
+        feeAmount: 0,
+      }
+    }
+
+    const customRate = getCustomPlanRate(customRates, brandGroup, paymentType, installments)
+    if (customRate === null) {
+      console.warn("[v0] Taxa não encontrada para plano personalizado")
+      return {
+        desiredNetAmount,
+        feePercentage: 0,
+        chargeAmount: desiredNetAmount,
+        feeAmount: 0,
+      }
+    }
+    feePercentage = customRate
   } else {
-    feePercentage = (rates as any).credit[installments]
+    // Plano fixo
+    const rates = PLAN_RATES[plan as "basic" | "intermediario" | "top"]
+    if (!rates) {
+      console.error("[v0] Plano inválido:", plan)
+      return {
+        desiredNetAmount,
+        feePercentage: 0,
+        chargeAmount: desiredNetAmount,
+        feeAmount: 0,
+      }
+    }
+
+    const brandRates = rates[brandGroup]
+    if (!brandRates) {
+      console.error("[v0] Bandeira inválida:", brandGroup)
+      return {
+        desiredNetAmount,
+        feePercentage: 0,
+        chargeAmount: desiredNetAmount,
+        feeAmount: 0,
+      }
+    }
+
+    if (paymentType === "pix_conta") {
+      feePercentage = (brandRates as any).pix_conta
+    } else if (paymentType === "pix_qrcode") {
+      feePercentage = (brandRates as any).pix_qrcode
+    } else if (paymentType === "debit") {
+      feePercentage = (brandRates as any).debit
+    } else {
+      feePercentage = (brandRates as any).credit[installments]
+    }
   }
 
-  // FÓRMULA: Valor a Cobrar = Valor Desejado ÷ (1 - Taxa ÷ 100)
-  // Exemplo: 5000 ÷ (1 - 12.64 ÷ 100) = 5000 ÷ (1 - 0.1264) = 5000 ÷ 0.8736
   const chargeAmountRaw = desiredNetAmount / (1 - feePercentage / 100)
-
-  // Arredondar para cima para garantir que o valor recebido seja exato
   const chargeAmount = Math.ceil(chargeAmountRaw * 100) / 100
   const feeAmount = chargeAmount - desiredNetAmount
-
-  console.log("[v0] Cálculo simplificado:", {
-    desiredNetAmount,
-    feePercentage: `${feePercentage}%`,
-    passo1_subtracao: `1 - ${feePercentage}/100 = ${1 - feePercentage / 100}`,
-    passo2_divisao: `${desiredNetAmount} / ${1 - feePercentage / 100} = ${chargeAmountRaw}`,
-    chargeAmountRaw,
-    chargeAmount_arredondado: chargeAmount,
-    feeAmount,
-  })
 
   return {
     desiredNetAmount,

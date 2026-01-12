@@ -19,7 +19,7 @@ const AdminVoiceCommandSchema = z.object({
     .object({
       page: z.enum(["dashboard", "clientes", "pagamentos", "comprovantes"]).optional(),
       clientName: z.string().optional(),
-      planName: z.enum(["basico", "intermediario", "top"]).optional(),
+      planName: z.enum(["basic", "intermediario", "top"]).optional(),
       amount: z.number().optional(),
       action: z.enum(["add", "remove"]).optional(),
       dateFrom: z.string().optional(),
@@ -72,7 +72,7 @@ Intenções possíveis:
 - "reject_payment": rejeitar um pagamento/saque
 - "approve_receipt": aprovar um comprovante pendente
 - "reject_receipt": rejeitar um comprovante pendente
-- "assign_plan": atribuir plano a um cliente (basico, intermediario, top)
+- "assign_plan": atribuir plano a um cliente (basic, intermediario, top)
 - "adjust_balance": adicionar ou remover saldo de um cliente
 - "filter_data": filtrar dados por período
 - "search_client": buscar um cliente específico
@@ -81,7 +81,7 @@ Intenções possíveis:
 Campos de dados:
 - page: "dashboard", "clientes", "pagamentos" ou "comprovantes"
 - clientName: nome do cliente mencionado
-- planName: "basico", "intermediario" ou "top"
+- planName: "basic", "intermediario" ou "top"
 - amount: valor numérico em reais
 - action: "add" (adicionar) ou "remove" (remover)
 - dateFrom: data inicial (formato ISO)

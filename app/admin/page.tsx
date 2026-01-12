@@ -1,6 +1,6 @@
 "use client"
 
-import { TrendingUp, Users, FileCheck, Banknote, RefreshCw } from "lucide-react"
+import { TrendingUp, DollarSign, CheckCircle, Clock, RefreshCw } from "lucide-react"
 import { useSupabase } from "@/lib/supabase-context"
 import { GlassCard } from "@/components/glass-card"
 import { AnimatedNumber } from "@/components/animated-number"
@@ -36,10 +36,18 @@ export default function AdminOverview() {
 
   const totalVolume = transactions.filter((t) => t.status !== "rejected").reduce((sum, t) => sum + t.gross_value, 0)
 
-  const totalNetVolume = transactions.filter((t) => t.status !== "rejected").reduce((sum, t) => sum + t.net_value, 0)
+  // Valor total a aprovar (transações pendentes de verificação)
+  const totalToApprove = transactions
+    .filter((t) => t.status === "pending_verification")
+    .reduce((sum, t) => sum + t.gross_value, 0)
 
-  const pendingReceipts = transactions.filter((t) => t.status === "pending_verification").length
-  const pendingWithdrawals = withdrawals.filter((w) => w.status === "pending").length
+  // Valor total disponível (saldo disponível de todos os clientes)
+  const totalAvailableBalance = clients.reduce((sum, client) => sum + (client.balance || 0), 0)
+
+  // Valor pendente para saque (soma de todos os saques pendentes)
+  const totalPendingWithdrawals = withdrawals
+    .filter((w) => w.status === "pending")
+    .reduce((sum, w) => sum + w.amount, 0)
 
   return (
     <div className="space-y-6">
@@ -79,13 +87,13 @@ export default function AdminOverview() {
 
         <GlassCard className="p-4 sm:p-6">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/20 sm:h-12 sm:w-12">
-              <Banknote className="h-5 w-5 text-emerald-500 sm:h-6 sm:w-6" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/20 sm:h-12 sm:w-12">
+              <DollarSign className="h-5 w-5 text-amber-500 sm:h-6 sm:w-6" />
             </div>
             <div>
-              <p className="text-xs text-muted-foreground sm:text-sm">Volume Total Líquido</p>
-              <p className="text-lg font-bold text-emerald-500 sm:text-2xl">
-                <AnimatedNumber value={totalNetVolume} />
+              <p className="text-xs text-muted-foreground sm:text-sm">Valor Total a Aprovar</p>
+              <p className="text-lg font-bold text-amber-500 sm:text-2xl">
+                <AnimatedNumber value={totalToApprove} />
               </p>
             </div>
           </div>
@@ -93,12 +101,14 @@ export default function AdminOverview() {
 
         <GlassCard className="p-4 sm:p-6">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/20 sm:h-12 sm:w-12">
-              <FileCheck className="h-5 w-5 text-amber-500 sm:h-6 sm:w-6" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/20 sm:h-12 sm:w-12">
+              <CheckCircle className="h-5 w-5 text-emerald-500 sm:h-6 sm:w-6" />
             </div>
             <div>
-              <p className="text-xs text-muted-foreground sm:text-sm">Comprovantes Pendentes</p>
-              <p className="text-lg font-bold text-amber-500 sm:text-2xl">{pendingReceipts}</p>
+              <p className="text-xs text-muted-foreground sm:text-sm">Valor Total Disponível</p>
+              <p className="text-lg font-bold text-emerald-500 sm:text-2xl">
+                <AnimatedNumber value={totalAvailableBalance} />
+              </p>
             </div>
           </div>
         </GlassCard>
@@ -106,11 +116,13 @@ export default function AdminOverview() {
         <GlassCard className="p-4 sm:p-6">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500/20 sm:h-12 sm:w-12">
-              <Users className="h-5 w-5 text-purple-500 sm:h-6 sm:w-6" />
+              <Clock className="h-5 w-5 text-purple-500 sm:h-6 sm:w-6" />
             </div>
             <div>
-              <p className="text-xs text-muted-foreground sm:text-sm">Saques Pendentes</p>
-              <p className="text-lg font-bold text-purple-500 sm:text-2xl">{pendingWithdrawals}</p>
+              <p className="text-xs text-muted-foreground sm:text-sm">Valor Pendente para Saque</p>
+              <p className="text-lg font-bold text-purple-500 sm:text-2xl">
+                <AnimatedNumber value={totalPendingWithdrawals} />
+              </p>
             </div>
           </div>
         </GlassCard>
