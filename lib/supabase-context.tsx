@@ -284,19 +284,19 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
 
     if (error) throw error
 
-    // Se enviou comprovante, notifica admins
-    if (data.receiptUrl) {
-      const { data: admins } = await supabase.from("profiles").select("id").eq("role", "admin")
+    const { data: admins } = await supabase.from("profiles").select("id").eq("role", "admin")
 
-      if (admins) {
-        for (const admin of admins) {
-          await supabase.from("notifications").insert({
-            user_id: admin.id,
-            type: "receipt_uploaded",
-            title: "Novo Comprovante",
-            message: `${profile?.full_name || "Cliente"} enviou um comprovante de transação`,
-          })
-        }
+    if (admins) {
+      const paymentTypeLabel = data.paymentType === "debit" ? "Débito" : "Crédito"
+      const statusLabel = data.receiptUrl ? "com comprovante" : "sem comprovante"
+
+      for (const admin of admins) {
+        await supabase.from("notifications").insert({
+          user_id: admin.id,
+          type: data.receiptUrl ? "transaction_pending" : "transaction_no_receipt",
+          title: "Nova Transação",
+          message: `${profile?.full_name || "Cliente"} adicionou ${paymentTypeLabel} de R$ ${calculation.grossAmount.toFixed(2)} (${statusLabel})`,
+        })
       }
     }
 

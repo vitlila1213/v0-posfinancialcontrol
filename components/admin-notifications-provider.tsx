@@ -6,13 +6,14 @@ import { useSupabase } from "@/lib/supabase-context"
 import { useAdminNotifications } from "@/hooks/use-admin-notifications"
 
 export function AdminNotificationsProvider({ children }: { children: React.ReactNode }) {
-  const { user, profile, supabase } = useSupabase()
+  const { user, supabase } = useSupabase()
   const [isAdminVerified, setIsAdminVerified] = useState(false)
 
   useEffect(() => {
     const verifyAdmin = async () => {
       if (!user?.id || !supabase) {
         console.log("[v0] Cannot verify admin: no user or supabase", { userId: user?.id, hasSupabase: !!supabase })
+        setIsAdminVerified(false)
         return
       }
 

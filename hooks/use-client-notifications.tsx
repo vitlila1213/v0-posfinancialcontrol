@@ -13,105 +13,50 @@ export function useClientNotifications(userId: string | undefined) {
   useEffect(() => {
     if (!userId || !supabase) return
 
-    console.log("[v0] Starting client notifications monitoring")
+    console.log("[v0] Starting client notifications monitoring for user:", userId)
 
-    const checkNewItems = async () => {
+    const checkNewNotifications = async () => {
       try {
-        const now = new Date()
-        let hasNewItems = false
+        console.log("[v0] 🔍 Checking for new client notifications at:", new Date().toISOString())
 
-        const { data: transactions, error: txError } = await supabase
-          .from("transactions")
-          .select("id, gross_value, status, updated_at, rejection_reason")
+        const { data: notifications, error } = await supabase
+          .from("notifications")
+          .select("*")
           .eq("user_id", userId)
-          .in("status", ["verified", "rejected"])
-          .gte("updated_at", lastCheckRef.current.toISOString())
-          .order("updated_at", { ascending: false })
+          .eq("read", false)
+          .gte("created_at", lastCheckRef.current.toISOString())
+          .order("created_at", { ascending: false })
 
-        if (txError) {
-          console.error("[v0] Error checking transactions:", txError.message)
-        } else if (transactions && transactions.length > 0) {
-          const newTx = transactions.filter((t) => new Date(t.updated_at) > lastCheckRef.current)
-
-          if (newTx.length > 0) {
-            hasNewItems = true
-
-            for (const transaction of newTx) {
-              const amount = Number(transaction.gross_value).toFixed(2)
-
-              if (transaction.status === "verified") {
-                await playNotification("Transação Aprovada", `R$ ${amount} foi aprovado e creditado na sua conta!`)
-              } else if (transaction.status === "rejected") {
-                const reason = transaction.rejection_reason || "Motivo não informado"
-                await playNotification("Transação Recusada", `R$ ${amount} foi recusada. Motivo: ${reason}`)
-              }
-            }
-          }
+        if (error) {
+          console.error("[v0] ❌ Error checking notifications:", error.message)
+          return
         }
 
-        const { data: withdrawals, error: wdError } = await supabase
-          .from("withdrawals")
-          .select("id, amount, status, updated_at, rejection_reason")
-          .eq("user_id", userId)
-          .in("status", ["paid", "rejected"])
-          .gte("updated_at", lastCheckRef.current.toISOString())
-          .order("updated_at", { ascending: false })
+        console.log("[v0] 📬 Found notifications:", notifications?.length || 0, notifications)
 
-        if (wdError) {
-          console.error("[v0] Error checking withdrawals:", wdError.message)
-        } else if (withdrawals && withdrawals.length > 0) {
-          const newWd = withdrawals.filter((w) => new Date(w.updated_at) > lastCheckRef.current)
+        if (notifications && notifications.length > 0) {
+          const newNotifs = notifications.filter((n) => new Date(n.created_at) > lastCheckRef.current)
+          console.log("[v0] 🆕 New notifications (filtered):", newNotifs.length)
 
-          if (newWd.length > 0) {
-            hasNewItems = true
+          if (newNotifs.length > 0) {
+            console.log("[v0] 🔔 PLAYING NOTIFICATIONS")
 
-            for (const withdrawal of newWd) {
-              const amount = Number(withdrawal.amount).toFixed(2)
-
-              if (withdrawal.status === "paid") {
-                await playNotification("Saque Aprovado", `Seu saque de R$ ${amount} foi processado com sucesso!`)
-              } else if (withdrawal.status === "rejected") {
-                const reason = withdrawal.rejection_reason || "Motivo não informado"
-                await playNotification("Saque Recusado", `Seu saque de R$ ${amount} foi recusado. Motivo: ${reason}`)
-              }
+            for (const notif of newNotifs) {
+              await playNotification(notif.title, notif.message)
             }
+
+            lastCheckRef.current = new Date()
           }
-        }
-
-        const { data: chargebacks, error: cbError } = await supabase
-          .from("transactions")
-          .select("id, gross_value, chargeback_reason, chargeback_at")
-          .eq("user_id", userId)
-          .eq("is_chargeback", true)
-          .gte("chargeback_at", lastCheckRef.current.toISOString())
-          .order("chargeback_at", { ascending: false })
-
-        if (cbError) {
-          console.error("[v0] Error checking chargebacks:", cbError.message)
-        } else if (chargebacks && chargebacks.length > 0) {
-          const newCb = chargebacks.filter((c) => new Date(c.chargeback_at) > lastCheckRef.current)
-
-          if (newCb.length > 0) {
-            hasNewItems = true
-
-            for (const chargeback of newCb) {
-              const amount = Number(chargeback.gross_value).toFixed(2)
-              const reason = chargeback.chargeback_reason || "Motivo não informado"
-              await playNotification("Estorno Realizado", `R$ ${amount} foi estornado. Motivo: ${reason}`)
-            }
-          }
-        }
-
-        if (hasNewItems) {
-          lastCheckRef.current = now
+        } else {
+          console.log("[v0] ℹ️ No new notifications found")
         }
       } catch (error) {
-        console.error("[v0] Error in checkNewItems:", error)
+        console.error("[v0] ❌ Error in checkNewNotifications:", error)
       }
     }
 
-    checkNewItems()
-    checkIntervalRef.current = setInterval(checkNewItems, 10000)
+    checkNewNotifications()
+    checkIntervalRef.current = setInterval(checkNewNotifications, 5000) // Check every 5 seconds
 
     return () => {
       if (checkIntervalRef.current) {
