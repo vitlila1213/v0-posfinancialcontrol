@@ -12,11 +12,12 @@ import type { Withdrawal } from "@/lib/types"
 export default function AdminPagamentosPage() {
   const { withdrawals, clients, payWithdrawal, cancelWithdrawal, isLoading } = useSupabase()
   const [search, setSearch] = useState("")
+  const [filterMethod, setFilterMethod] = useState<string>("all")
   const [selectedWithdrawal, setSelectedWithdrawal] = useState<Withdrawal | null>(null)
   const [proofFile, setProofFile] = useState<File | null>(null)
   const [processing, setProcessing] = useState(false)
-  const [showCancelModal, setShowCancelModal] = useState(false) // Added cancel modal state
-  const [cancelReason, setCancelReason] = useState("") // Added cancel reason state
+  const [showCancelModal, setShowCancelModal] = useState(false)
+  const [cancelReason, setCancelReason] = useState("")
 
   if (isLoading) {
     return (
@@ -28,7 +29,7 @@ export default function AdminPagamentosPage() {
 
   const pendingWithdrawals = withdrawals.filter((w) => w.status === "pending")
   const paidWithdrawals = withdrawals.filter((w) => w.status === "paid")
-  const cancelledWithdrawals = withdrawals.filter((w) => w.status === "cancelled") // Added cancelled filter
+  const cancelledWithdrawals = withdrawals.filter((w) => w.status === "cancelled")
 
   const getClient = (userId: string) => {
     return clients.find((c) => c.id === userId)
@@ -80,7 +81,6 @@ export default function AdminPagamentosPage() {
 
     setProcessing(true)
     try {
-      // Simula upload do arquivo (em produção, faria upload para storage)
       const proofUrl = URL.createObjectURL(proofFile)
       await payWithdrawal(selectedWithdrawal.id, proofUrl)
       setSelectedWithdrawal(null)
@@ -119,6 +119,18 @@ export default function AdminPagamentosPage() {
     window.open(`https://wa.me/55${phone}?text=${message}`, "_blank")
   }
 
+  const filteredPendingWithdrawals = pendingWithdrawals.filter((w) => {
+    const client = getClient(w.user_id)
+    const matchesSearch =
+      search === "" ||
+      client?.full_name?.toLowerCase().includes(search.toLowerCase()) ||
+      client?.email?.toLowerCase().includes(search.toLowerCase())
+
+    const matchesMethod = filterMethod === "all" || w.withdrawal_method === filterMethod
+
+    return matchesSearch && matchesMethod
+  })
+
   return (
     <div className="space-y-6">
       <div>
@@ -130,12 +142,12 @@ export default function AdminPagamentosPage() {
       <GlassCard className="p-4 sm:p-6">
         <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <h3 className="text-base font-semibold text-foreground sm:text-lg">
-            Saques Pendentes ({pendingWithdrawals.length})
+            Saques Pendentes ({filteredPendingWithdrawals.length})
           </h3>
           <div className="relative w-full sm:w-64">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Buscar..."
+              placeholder="Buscar cliente..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="border-white/10 bg-white/5 pl-9"
@@ -143,14 +155,51 @@ export default function AdminPagamentosPage() {
           </div>
         </div>
 
-        {pendingWithdrawals.length === 0 ? (
+        <div className="mb-4 flex flex-wrap gap-2">
+          <button
+            onClick={() => setFilterMethod("all")}
+            className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+              filterMethod === "all" ? "bg-amber-500 text-white" : "bg-white/5 text-muted-foreground hover:bg-white/10"
+            }`}
+          >
+            Todos Métodos
+          </button>
+          <button
+            onClick={() => setFilterMethod("pix")}
+            className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+              filterMethod === "pix" ? "bg-amber-500 text-white" : "bg-white/5 text-muted-foreground hover:bg-white/10"
+            }`}
+          >
+            PIX
+          </button>
+          <button
+            onClick={() => setFilterMethod("bank")}
+            className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+              filterMethod === "bank" ? "bg-amber-500 text-white" : "bg-white/5 text-muted-foreground hover:bg-white/10"
+            }`}
+          >
+            Transferência
+          </button>
+          <button
+            onClick={() => setFilterMethod("boleto")}
+            className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+              filterMethod === "boleto"
+                ? "bg-amber-500 text-white"
+                : "bg-white/5 text-muted-foreground hover:bg-white/10"
+            }`}
+          >
+            Boleto
+          </button>
+        </div>
+
+        {filteredPendingWithdrawals.length === 0 ? (
           <div className="py-12 text-center">
             <Wallet className="mx-auto mb-3 h-12 w-12 text-muted-foreground/50" />
-            <p className="text-muted-foreground">Nenhum saque pendente</p>
+            <p className="text-muted-foreground">Nenhum saque encontrado</p>
           </div>
         ) : (
           <div className="space-y-3">
-            {pendingWithdrawals.map((withdrawal) => {
+            {filteredPendingWithdrawals.map((withdrawal) => {
               const client = getClient(withdrawal.user_id)
 
               return (

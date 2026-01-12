@@ -1,6 +1,6 @@
 "use client"
 
-import { TrendingUp, DollarSign, CheckCircle, Clock, RefreshCw } from "lucide-react"
+import { TrendingUp, DollarSign, Clock, RefreshCw } from "lucide-react"
 import { useSupabase } from "@/lib/supabase-context"
 import { GlassCard } from "@/components/glass-card"
 import { AnimatedNumber } from "@/components/animated-number"
@@ -70,7 +70,7 @@ export default function AdminOverview() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <GlassCard className="p-4 sm:p-6">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/20 sm:h-12 sm:w-12">
@@ -94,20 +94,6 @@ export default function AdminOverview() {
               <p className="text-xs text-muted-foreground sm:text-sm">Valor Total a Aprovar</p>
               <p className="text-lg font-bold text-amber-500 sm:text-2xl">
                 <AnimatedNumber value={totalToApprove} />
-              </p>
-            </div>
-          </div>
-        </GlassCard>
-
-        <GlassCard className="p-4 sm:p-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/20 sm:h-12 sm:w-12">
-              <CheckCircle className="h-5 w-5 text-emerald-500 sm:h-6 sm:w-6" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground sm:text-sm">Valor Total Disponível</p>
-              <p className="text-lg font-bold text-emerald-500 sm:text-2xl">
-                <AnimatedNumber value={totalAvailableBalance} />
               </p>
             </div>
           </div>

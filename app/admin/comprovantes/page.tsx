@@ -15,6 +15,8 @@ import { toast } from "sonner"
 export default function AdminComprovantesPage() {
   const { transactions, clients, verifyTransaction, isLoading } = useSupabase()
   const [search, setSearch] = useState("")
+  const [filterBrand, setFilterBrand] = useState<string>("all")
+  const [filterPaymentType, setFilterPaymentType] = useState<string>("all")
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null)
   const [rejectReason, setRejectReason] = useState("")
   const [showRejectModal, setShowRejectModal] = useState(false)
@@ -90,6 +92,16 @@ export default function AdminComprovantesPage() {
     }
   }
 
+  const filteredReceipts = pendingReceipts.filter((t) => {
+    const matchesSearch = search === "" || getClientName(t.user_id).toLowerCase().includes(search.toLowerCase())
+
+    const matchesBrand = filterBrand === "all" || t.brand === filterBrand
+
+    const matchesPaymentType = filterPaymentType === "all" || t.payment_type === filterPaymentType
+
+    return matchesSearch && matchesBrand && matchesPaymentType
+  })
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -103,12 +115,12 @@ export default function AdminComprovantesPage() {
       <GlassCard className="p-4 sm:p-6">
         <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <h3 className="text-base font-semibold text-foreground sm:text-lg">
-            Aguardando Verificação ({pendingReceipts.length})
+            Aguardando Verificação ({filteredReceipts.length})
           </h3>
           <div className="relative w-full sm:w-64">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Buscar..."
+              placeholder="Buscar cliente..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="border-white/10 bg-white/5 pl-9"
@@ -116,14 +128,89 @@ export default function AdminComprovantesPage() {
           </div>
         </div>
 
-        {pendingReceipts.length === 0 ? (
+        <div className="mb-4 flex flex-wrap gap-2">
+          <div className="flex gap-2">
+            <button
+              onClick={() => setFilterBrand("all")}
+              className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                filterBrand === "all" ? "bg-amber-500 text-white" : "bg-white/5 text-muted-foreground hover:bg-white/10"
+              }`}
+            >
+              Todas Bandeiras
+            </button>
+            <button
+              onClick={() => setFilterBrand("visa_master")}
+              className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                filterBrand === "visa_master"
+                  ? "bg-amber-500 text-white"
+                  : "bg-white/5 text-muted-foreground hover:bg-white/10"
+              }`}
+            >
+              Visa/Master
+            </button>
+            <button
+              onClick={() => setFilterBrand("elo_amex")}
+              className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                filterBrand === "elo_amex"
+                  ? "bg-amber-500 text-white"
+                  : "bg-white/5 text-muted-foreground hover:bg-white/10"
+              }`}
+            >
+              Elo/Amex
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setFilterPaymentType("all")}
+              className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                filterPaymentType === "all"
+                  ? "bg-purple-500 text-white"
+                  : "bg-white/5 text-muted-foreground hover:bg-white/10"
+              }`}
+            >
+              Todos Tipos
+            </button>
+            <button
+              onClick={() => setFilterPaymentType("debit")}
+              className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                filterPaymentType === "debit"
+                  ? "bg-purple-500 text-white"
+                  : "bg-white/5 text-muted-foreground hover:bg-white/10"
+              }`}
+            >
+              Débito
+            </button>
+            <button
+              onClick={() => setFilterPaymentType("credit")}
+              className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                filterPaymentType === "credit"
+                  ? "bg-purple-500 text-white"
+                  : "bg-white/5 text-muted-foreground hover:bg-white/10"
+              }`}
+            >
+              Crédito
+            </button>
+            <button
+              onClick={() => setFilterPaymentType("pix")}
+              className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                filterPaymentType === "pix"
+                  ? "bg-purple-500 text-white"
+                  : "bg-white/5 text-muted-foreground hover:bg-white/10"
+              }`}
+            >
+              PIX
+            </button>
+          </div>
+        </div>
+
+        {filteredReceipts.length === 0 ? (
           <div className="py-12 text-center">
             <FileText className="mx-auto mb-3 h-12 w-12 text-muted-foreground/50" />
-            <p className="text-muted-foreground">Nenhum comprovante pendente</p>
+            <p className="text-muted-foreground">Nenhum comprovante encontrado</p>
           </div>
         ) : (
           <div className="space-y-3">
-            {pendingReceipts.map((tx) => (
+            {filteredReceipts.map((tx) => (
               <div
                 key={tx.id}
                 className="flex flex-col gap-4 rounded-xl border border-white/5 bg-white/5 p-4 sm:flex-row sm:items-center sm:justify-between"
@@ -178,7 +265,6 @@ export default function AdminComprovantesPage() {
         )}
       </GlassCard>
 
-      {/* View Receipt Modal */}
       <AnimatePresence>
         {selectedTransaction && !showRejectModal && (
           <>
@@ -281,7 +367,6 @@ export default function AdminComprovantesPage() {
         )}
       </AnimatePresence>
 
-      {/* Reject Modal */}
       <AnimatePresence>
         {showRejectModal && selectedTransaction && (
           <>
