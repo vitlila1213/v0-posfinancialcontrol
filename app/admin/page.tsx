@@ -112,6 +112,34 @@ export default function AdminOverview() {
             </div>
           </div>
         </GlassCard>
+
+        {/* New Card for Total Available Balance */}
+        <GlassCard className="p-4 sm:p-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-green-500/20 sm:h-12 sm:w-12">
+              {/* Placeholder Icon */}
+              <svg
+                className="h-5 w-5 text-green-500 sm:h-6 sm:w-6"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M12 22s8-4 8-10V6s-8 4-8 10 0 8 8 8z" />
+                <path d="M22 12h-4M6 12H2" />
+                <path d="M12 6v4M12 18v4" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground sm:text-sm">Valor Total Disponível</p>
+              <p className="text-lg font-bold text-green-500 sm:text-2xl">
+                <AnimatedNumber value={totalAvailableBalance} />
+              </p>
+            </div>
+          </div>
+        </GlassCard>
       </div>
 
       <AdminChartCard transactions={transactions} />

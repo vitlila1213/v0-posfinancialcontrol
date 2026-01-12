@@ -70,6 +70,10 @@ export default function ClienteDashboard() {
   const balances = getClientBalances(user.id)
   const userTransactions = transactions.filter((t) => t.user_id === user.id)
 
+  const pendingBalance = userTransactions
+    .filter((t) => t.status === "pending_verification")
+    .reduce((sum, t) => sum + t.net_value, 0)
+
   return (
     <div className="space-y-6">
       <AnnouncementPopup />
@@ -144,7 +148,7 @@ export default function ClienteDashboard() {
             <div>
               <p className="text-xs text-muted-foreground sm:text-sm">Saldo Pendente</p>
               <p className="text-lg font-bold text-amber-500 sm:text-2xl">
-                {showBalance ? <AnimatedNumber value={balances.pending} /> : "••••••"}
+                {showBalance ? <AnimatedNumber value={pendingBalance} /> : "••••••"}
               </p>
             </div>
           </div>

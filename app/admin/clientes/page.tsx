@@ -6,17 +6,19 @@ import {
   Wallet,
   Clock,
   TrendingUp,
-  User,
   X,
   Crown,
   Check,
   AlertCircle,
   Download,
   Calendar,
-  DollarSign,
   Plus,
   Edit,
   Trash2,
+  Users,
+  Eye,
+  EyeOff,
+  CreditCard,
 } from "lucide-react"
 import { useSupabase } from "@/lib/supabase-context"
 import { GlassCard } from "@/components/glass-card"
@@ -36,6 +38,8 @@ import autoTable from "jspdf-autotable"
 import { BalanceAdjustmentModal } from "@/components/balance-adjustment-modal"
 import { CustomPlanModal } from "@/components/custom-plan-modal" // Import custom plan modal
 import { createClient } from "@/lib/supabase/client" // Import supabase client
+import { Badge } from "@/components/ui/badge" // Import Badge component
+import Link from "next/link" // Import Link for navigation
 
 export default function AdminClientesPage() {
   const { clients, transactions, getClientBalances, assignClientPlan, isLoading } = useSupabase()
@@ -52,6 +56,11 @@ export default function AdminClientesPage() {
   const [showCustomPlanModal, setShowCustomPlanModal] = useState(false)
   const [isLoadingPlans, setIsLoadingPlans] = useState(false)
   const [editingPlan, setEditingPlan] = useState<CustomPlan | null>(null)
+
+  // Added state for search query, selected plan filter, and hide balances toggle
+  const [searchQuery, setSearchQuery] = useState("")
+  const [selectedPlanFilter, setSelectedPlanFilter] = useState<string>("all")
+  const [hideBalances, setHideBalances] = useState(false)
 
   useEffect(() => {
     fetchCustomPlans()
@@ -96,31 +105,33 @@ export default function AdminClientesPage() {
     )
   }
 
+  // Filter clients by search query and plan
   const filteredClients = clients.filter((c) => {
-    // Filter by search
-    if (search) {
-      const searchLower = search.toLowerCase()
-      const matchesSearch =
-        c.full_name?.toLowerCase().includes(searchLower) ||
-        c.email?.toLowerCase().includes(searchLower) ||
-        c.phone?.includes(search)
-      if (!matchesSearch) return false
-    }
+    const matchesSearch =
+      c.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.phone?.includes(searchQuery)
 
-    // Filter by plan
-    if (planFilter) {
-      if (c.plan !== planFilter) return false
-    }
+    if (searchQuery && !matchesSearch) return false
 
-    return true
+    const matchesPlanFilter = selectedPlanFilter === "all" || c.plan === selectedPlanFilter
+
+    return matchesPlanFilter
   })
 
-  // Separar clientes por status de plano
+  // Separate clients by plan status
   const clientsWithoutPlan = filteredClients.filter((c) => !c.plan)
   const clientsWithPlan = filteredClients.filter((c) => c.plan)
 
   const getClientTransactions = (userId: string): Transaction[] => {
     return transactions.filter((t) => t.user_id === userId)
+  }
+
+  const getPendingBalance = (clientId: string) => {
+    const pendingTransactions = transactions.filter(
+      (t) => t.user_id === clientId && t.status === "pending_verification",
+    )
+    return pendingTransactions.reduce((sum, t) => sum + t.net_value, 0)
   }
 
   const getFilteredTransactions = (userId: string): Transaction[] => {
@@ -357,6 +368,49 @@ export default function AdminClientesPage() {
     setPlanModalClient(null)
   }
 
+  // Calculate balances and counts for active clients
+  const clientBalances = clientsWithPlan.reduce(
+    (acc, client) => {
+      acc[client.id] = getClientBalances(client.id)
+      return acc
+    },
+    {} as Record<string, ReturnType<typeof getClientBalances>>,
+  )
+
+  const clientPendingBalances = clientsWithPlan.reduce(
+    (acc, client) => {
+      acc[client.id] = getPendingBalance(client.id)
+      return acc
+    },
+    {} as Record<string, number>,
+  )
+
+  const receiptsCount = clientsWithPlan.reduce(
+    (acc, client) => {
+      acc[client.id] = getClientTransactions(client.id).filter(
+        (t) => t.status === "pending_receipt" || t.status === "pending_verification",
+      ).length
+      return acc
+    },
+    {} as Record<string, number>,
+  )
+
+  // Filter active clients based on search query and plan filter
+  const filteredActiveClients = clientsWithPlan.filter((client) => {
+    const matchesSearch =
+      client.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      client.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      client.phone?.includes(searchQuery)
+
+    if (searchQuery && !matchesSearch) return false
+
+    const matchesPlanFilter = selectedPlanFilter === "all" || client.plan === selectedPlanFilter
+
+    return matchesPlanFilter
+  })
+
+  const activeClients = clientsWithPlan // This is already filtered by plan
+
   return (
     <div className="space-y-6">
       <div>
@@ -416,171 +470,134 @@ export default function AdminClientesPage() {
         </GlassCard>
       )}
 
-      {/* Todos os clientes */}
+      {/* Clientes Ativos */}
       <GlassCard className="p-4 sm:p-6">
-        <div className="mb-4 space-y-4">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <h3 className="text-base font-semibold text-foreground sm:text-lg">
-              Clientes Ativos ({clientsWithPlan.length})
-            </h3>
-            <div className="relative w-full sm:w-64">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Buscar cliente..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="border-white/10 bg-white/5 pl-9"
-              />
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/20">
+              <Users className="h-5 w-5 text-emerald-500" />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-foreground sm:text-lg">
+                Clientes Ativos ({activeClients.length})
+              </h3>
+              <p className="text-sm text-muted-foreground">Gerencie os clientes e atribua planos</p>
             </div>
           </div>
+          <Button variant="ghost" size="sm" onClick={() => setHideBalances(!hideBalances)} className="gap-2">
+            {hideBalances ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            <span className="hidden sm:inline">{hideBalances ? "Mostrar" : "Ocultar"} Saldos</span>
+          </Button>
+        </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm text-muted-foreground">Filtrar por plano:</span>
-            <button
-              onClick={() => setPlanFilter(null)}
-              className={cn(
-                "rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
-                !planFilter
-                  ? "bg-white/20 text-foreground"
-                  : "bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground",
-              )}
+        {/* Filtros */}
+        <div className="mb-4 space-y-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por nome, email ou telefone..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <span className="text-xs text-muted-foreground">Filtrar por plano:</span>
+            <Button
+              variant={selectedPlanFilter === "all" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedPlanFilter("all")}
             >
               Todos
-            </button>
-            <button
-              onClick={() => setPlanFilter("top")}
-              className={cn(
-                "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
-                planFilter === "top"
-                  ? "border-emerald-500 bg-emerald-500/20 text-emerald-500"
-                  : "border-white/10 bg-white/5 text-muted-foreground hover:border-emerald-500/50 hover:bg-emerald-500/10 hover:text-emerald-500",
-              )}
+            </Button>
+            <Button
+              variant={selectedPlanFilter === "top" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedPlanFilter("top")}
             >
               Master
-            </button>
-            <button
-              onClick={() => setPlanFilter("intermediario")}
-              className={cn(
-                "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
-                planFilter === "intermediario"
-                  ? "border-blue-500 bg-blue-500/20 text-blue-500"
-                  : "border-white/10 bg-white/5 text-muted-foreground hover:border-blue-500/50 hover:bg-blue-500/10 hover:text-blue-500",
-              )}
+            </Button>
+            <Button
+              variant={selectedPlanFilter === "intermediario" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedPlanFilter("intermediario")}
             >
               Intermediário
-            </button>
-            <button
-              onClick={() => setPlanFilter("basic")}
-              className={cn(
-                "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
-                planFilter === "basic"
-                  ? "border-amber-500 bg-amber-500/20 text-amber-500"
-                  : "border-white/10 bg-white/5 text-muted-foreground hover:border-amber-500/50 hover:bg-amber-500/10 hover:text-amber-500",
-              )}
+            </Button>
+            <Button
+              variant={selectedPlanFilter === "basic" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedPlanFilter("basic")}
             >
               Básico
-            </button>
+            </Button>
             {customPlans.map((plan) => (
-              <button
+              <Button
                 key={plan.id}
-                onClick={() => setPlanFilter(plan.id)}
-                className={cn(
-                  "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
-                  planFilter === plan.id
-                    ? "border-purple-500 bg-purple-500/20 text-purple-500"
-                    : "border-white/10 bg-white/5 text-muted-foreground hover:border-purple-500/50 hover:bg-purple-500/10 hover:text-purple-500",
-                )}
+                variant={selectedPlanFilter === plan.id ? "default" : "outline"}
+                size="sm"
+                onClick={() => setSelectedPlanFilter(plan.id)}
               >
                 {plan.name}
-              </button>
+              </Button>
             ))}
           </div>
         </div>
 
-        {clientsWithPlan.length === 0 ? (
-          <div className="py-12 text-center">
-            <User className="mx-auto mb-3 h-12 w-12 text-muted-foreground/50" />
-            <p className="text-muted-foreground">Nenhum cliente com plano ativo</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {clientsWithPlan.map((client) => {
-              const balances = getClientBalances(client.id)
-              const clientTx = getClientTransactions(client.id)
-              const pendingReceipts = clientTx.filter(
-                (t) => t.status === "pending_receipt" || t.status === "pending_verification",
-              ).length
+        {/* Client Cards */}
+        <div className="space-y-3">
+          {filteredActiveClients.map((client) => (
+            <div
+              key={client.id}
+              className="flex flex-col gap-4 rounded-xl border border-white/10 bg-white/5 p-4 transition-all hover:bg-white/10 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-500">
+                  {client.full_name?.[0]?.toUpperCase() || "C"}
+                </div>
+                <div>
+                  <h4 className="font-semibold text-foreground">{client.full_name}</h4>
+                  <p className="text-sm text-muted-foreground">{client.email}</p>
+                </div>
+                <Badge className={cn("text-xs", getPlanBadgeColor(client.plan))}>
+                  {getPlanDisplayName(client.plan)}
+                </Badge>
+              </div>
 
-              return (
-                <div
-                  key={client.id}
-                  className="flex flex-col gap-4 rounded-xl border border-white/5 bg-white/5 p-4 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-500">
-                      {client.full_name?.[0]?.toUpperCase() || "C"}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="font-medium text-foreground">{client.full_name || "Sem nome"}</p>
-                        <span
-                          className={cn(
-                            "rounded-full border px-2 py-0.5 text-xs font-medium",
-                            getPlanBadgeColor(client.plan),
-                          )}
-                        >
-                          {client.plan ? getPlanDisplayName(client.plan) : "Sem Plano"}
-                        </span>
-                      </div>
-                      <p className="text-xs text-muted-foreground">{client.email}</p>
+              <div className="flex items-center gap-4">
+                <div className="flex gap-4 text-sm">
+                  <div className="text-center">
+                    <div className="text-xs text-muted-foreground">Disponível</div>
+                    <div className="font-semibold text-emerald-500">
+                      {hideBalances ? "R$ •••" : `R$ ${clientBalances[client.id]?.available || "0,00"}`}
                     </div>
                   </div>
-
-                  <div className="grid grid-cols-3 gap-4 text-center sm:flex sm:gap-6">
-                    <div>
-                      <p className="text-xs text-muted-foreground">Disponível</p>
-                      <p className="text-sm font-semibold text-emerald-500">{formatCurrency(balances.available)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Pendente</p>
-                      <p className="text-sm font-semibold text-amber-500">{formatCurrency(balances.pending)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Comprov.</p>
-                      <p className="text-sm font-semibold text-rose-500">{pendingReceipts}</p>
+                  <div className="text-center">
+                    <div className="text-xs text-muted-foreground">Pendente</div>
+                    <div className="font-semibold text-amber-500">
+                      {hideBalances ? "R$ •••" : `R$ ${clientPendingBalances[client.id] || "0,00"}`}
                     </div>
                   </div>
-
-                  <div className="flex gap-2">
-                    <Button
-                      onClick={() => openPlanModal(client)}
-                      className="flex items-center justify-center gap-2 rounded-lg bg-white/5 px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
-                    >
-                      <Crown className="h-4 w-4" />
-                      Plano
-                    </Button>
-                    <Button
-                      onClick={() => setAdjustmentClient(client)}
-                      variant="outline"
-                      size="sm"
-                      className="border-white/10 bg-white/5"
-                    >
-                      <DollarSign className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      onClick={() => setSelectedClient(client)}
-                      variant="outline"
-                      size="sm"
-                      className="border-white/10 bg-white/5"
-                    >
-                      Ver Painel
-                    </Button>
+                  <div className="text-center">
+                    <div className="text-xs text-muted-foreground">Comprov.</div>
+                    <div className="font-semibold text-rose-500">{receiptsCount[client.id] || 0}</div>
                   </div>
                 </div>
-              )
-            })}
-          </div>
-        )}
+
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => openPlanModal(client)}>
+                    <CreditCard className="mr-2 h-4 w-4" />
+                    Plano
+                  </Button>
+                  <Button variant="default" size="sm" asChild>
+                    <Link href={`/admin/clientes/${client.id}`}>Ver Painel</Link>
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       </GlassCard>
 
       {/* Balance Adjustment Modal */}

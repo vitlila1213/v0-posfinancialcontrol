@@ -38,7 +38,8 @@ interface SupabaseContextType {
   }) => Promise<void>
   updateTransaction: (id: string, updates: Partial<Transaction>) => Promise<void>
   uploadReceipt: (transactionId: string, receiptUrl: string) => Promise<void>
-  verifyTransaction: (transactionId: string, approved: boolean, reason?: string) => Promise<void>
+  verifyTransaction: (transactionId: string) => Promise<void>
+  rejectTransaction: (transactionId: string, reason: string) => Promise<void>
   // Withdrawal actions
   requestWithdrawal: (data: {
     amount: number
@@ -341,7 +342,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     await refreshData()
   }
 
-  const verifyTransaction = async (transactionId: string, approved: boolean, reason?: string) => {
+  const verifyTransaction = async (transactionId: string) => {
     if (!user) return
 
     const transaction = transactions.find((t) => t.id === transactionId)
@@ -350,24 +351,50 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     const { error } = await supabase
       .from("transactions")
       .update({
-        status: approved ? "verified" : "rejected",
-        rejection_reason: reason || null,
-        verified_at: new Date().toISOString(),
+        status: "verified",
         verified_by: user.id,
+        verified_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
       .eq("id", transactionId)
 
     if (error) throw error
 
-    // Notifica o cliente
     await supabase.from("notifications").insert({
       user_id: transaction.user_id,
-      type: approved ? "receipt_verified" : "receipt_rejected",
-      title: approved ? "Comprovante Aprovado" : "Comprovante Rejeitado",
-      message: approved
-        ? "Seu comprovante foi verificado e aprovado. O valor já está disponível para saque."
-        : `Seu comprovante foi rejeitado. Motivo: ${reason || "Não especificado"}`,
+      type: "transaction_approved",
+      title: "Transação Aprovada",
+      message: `Sua transação de R$ ${transaction.gross_value.toFixed(2)} foi aprovada. Valor líquido: R$ ${transaction.net_value.toFixed(2)}`,
+      related_id: transactionId,
+    })
+
+    await refreshData()
+  }
+
+  const rejectTransaction = async (transactionId: string, reason: string) => {
+    if (!user) return
+
+    const transaction = transactions.find((t) => t.id === transactionId)
+    if (!transaction) return
+
+    const { error } = await supabase
+      .from("transactions")
+      .update({
+        status: "rejected",
+        rejection_reason: reason,
+        rejected_by: user.id,
+        rejected_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", transactionId)
+
+    if (error) throw error
+
+    await supabase.from("notifications").insert({
+      user_id: transaction.user_id,
+      type: "transaction_rejected",
+      title: "Transação Rejeitada",
+      message: `Sua transação de R$ ${transaction.gross_value.toFixed(2)} foi rejeitada. Motivo: ${reason}`,
       related_id: transactionId,
     })
 
@@ -743,6 +770,35 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     return data || []
   }
 
+  const addBalanceAdjustment = async (userId: string, type: "add" | "remove", amount: number, reason: string) => {
+    if (!user || profile?.role !== "admin") {
+      throw new Error("Apenas administradores podem ajustar saldos")
+    }
+
+    console.log("[v0] Adding balance adjustment:", { userId, type, amount, reason })
+
+    const { data: adjustment, error: adjustmentError } = await supabase
+      .from("balance_adjustments")
+      .insert({
+        user_id: userId,
+        admin_id: user.id,
+        type,
+        amount,
+        reason,
+      })
+      .select()
+      .single()
+
+    if (adjustmentError) {
+      console.error("[v0] Error creating adjustment:", adjustmentError)
+      throw adjustmentError
+    }
+
+    console.log("[v0] Balance adjustment successful, trigger will update balance automatically")
+    await refreshData()
+    return adjustment
+  }
+
   const logout = async () => {
     await supabase.auth.signOut()
     window.location.href = "/auth/login"
@@ -767,6 +823,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       updateTransaction,
       uploadReceipt,
       verifyTransaction,
+      rejectTransaction,
       requestWithdrawal,
       payWithdrawal,
       cancelWithdrawal,
@@ -779,6 +836,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       updateCustomPlan,
       deleteCustomPlan,
       fetchCustomPlans,
+      addBalanceAdjustment,
       refreshData,
       logout,
       supabase: createClient(),

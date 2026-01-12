@@ -666,7 +666,7 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
                           isProcessingImage && "opacity-50 pointer-events-none",
                         )}
                       >
-                        <input {...getInputProps({ capture: "environment" })} />
+                        <input {...getInputProps({ accept: "image/*,application/pdf,.heic" })} />
                         {isProcessingImage ? (
                           <div className="text-center">
                             <Loader2 className="mb-2 h-8 w-8 animate-spin text-emerald-500" />
@@ -764,7 +764,7 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
                           isProcessingImage && "opacity-50 pointer-events-none",
                         )}
                       >
-                        <input {...getInputProps({ capture: "environment" })} />
+                        <input {...getInputProps({ accept: "image/*,application/pdf,.heic" })} />
                         {receiptFile ? (
                           <div className="flex flex-col items-center gap-1.5 text-emerald-500 sm:gap-2">
                             <Check className="h-6 w-6 sm:h-8 sm:w-8" />
@@ -784,7 +784,7 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
                           <div className="flex flex-col items-center gap-1.5 text-muted-foreground sm:gap-2">
                             <FileUp className="h-6 w-6 sm:h-8 sm:w-8" />
                             <span className="text-xs sm:text-sm">
-                              {isDragActive ? "Solte o arquivo" : "Arraste ou clique"}
+                              {isDragActive ? "Solte o arquivo" : "Arraste, tire foto ou selecione"}
                             </span>
                             <span className="text-xs">PDF, PNG, JPG ou HEIC</span>
                           </div>

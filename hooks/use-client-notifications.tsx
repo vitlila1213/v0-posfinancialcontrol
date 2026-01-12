@@ -15,58 +15,104 @@ export function useClientNotifications(userId: string | undefined) {
 
     console.log("[v0] Starting client notifications monitoring")
 
-    // Function to check for new transactions
-    const checkNewTransactions = async () => {
+    const checkNewItems = async () => {
       try {
-        const { data, error } = await supabase
+        const now = new Date()
+        let hasNewItems = false
+
+        const { data: transactions, error: txError } = await supabase
           .from("transactions")
-          .select("id, gross_value, status, created_at")
+          .select("id, gross_value, status, updated_at, rejection_reason")
           .eq("user_id", userId)
-          .gte("created_at", lastCheckRef.current.toISOString())
-          .order("created_at", { ascending: false })
+          .in("status", ["verified", "rejected"])
+          .gte("updated_at", lastCheckRef.current.toISOString())
+          .order("updated_at", { ascending: false })
 
-        if (error) {
-          console.error("[v0] Error checking transactions:", error.message)
-          return
-        }
+        if (txError) {
+          console.error("[v0] Error checking transactions:", txError.message)
+        } else if (transactions && transactions.length > 0) {
+          const newTx = transactions.filter((t) => new Date(t.updated_at) > lastCheckRef.current)
 
-        if (data && data.length > 0) {
-          // Filter transactions created after last check (excluding the initial load)
-          const now = new Date()
-          const newTransactions = data.filter((t) => new Date(t.created_at) > lastCheckRef.current)
+          if (newTx.length > 0) {
+            hasNewItems = true
 
-          if (newTransactions.length > 0) {
-            console.log("[v0] New transactions detected:", newTransactions.length)
+            for (const transaction of newTx) {
+              const amount = Number(transaction.gross_value).toFixed(2)
 
-            for (const transaction of newTransactions) {
-              let message = `Nova transação de R$ ${transaction.gross_value.toFixed(2)}`
-
-              if (transaction.status === "pending") {
-                message += " - Aguardando verificação"
-              } else if (transaction.status === "verified") {
-                message += " - Verificada!"
+              if (transaction.status === "verified") {
+                await playNotification("Transação Aprovada", `R$ ${amount} foi aprovado e creditado na sua conta!`)
               } else if (transaction.status === "rejected") {
-                message += " - Rejeitada"
+                const reason = transaction.rejection_reason || "Motivo não informado"
+                await playNotification("Transação Recusada", `R$ ${amount} foi recusada. Motivo: ${reason}`)
               }
-
-              await playNotification("Nova Transação", message)
             }
           }
+        }
 
+        const { data: withdrawals, error: wdError } = await supabase
+          .from("withdrawals")
+          .select("id, amount, status, updated_at, rejection_reason")
+          .eq("user_id", userId)
+          .in("status", ["paid", "rejected"])
+          .gte("updated_at", lastCheckRef.current.toISOString())
+          .order("updated_at", { ascending: false })
+
+        if (wdError) {
+          console.error("[v0] Error checking withdrawals:", wdError.message)
+        } else if (withdrawals && withdrawals.length > 0) {
+          const newWd = withdrawals.filter((w) => new Date(w.updated_at) > lastCheckRef.current)
+
+          if (newWd.length > 0) {
+            hasNewItems = true
+
+            for (const withdrawal of newWd) {
+              const amount = Number(withdrawal.amount).toFixed(2)
+
+              if (withdrawal.status === "paid") {
+                await playNotification("Saque Aprovado", `Seu saque de R$ ${amount} foi processado com sucesso!`)
+              } else if (withdrawal.status === "rejected") {
+                const reason = withdrawal.rejection_reason || "Motivo não informado"
+                await playNotification("Saque Recusado", `Seu saque de R$ ${amount} foi recusado. Motivo: ${reason}`)
+              }
+            }
+          }
+        }
+
+        const { data: chargebacks, error: cbError } = await supabase
+          .from("transactions")
+          .select("id, gross_value, chargeback_reason, chargeback_at")
+          .eq("user_id", userId)
+          .eq("is_chargeback", true)
+          .gte("chargeback_at", lastCheckRef.current.toISOString())
+          .order("chargeback_at", { ascending: false })
+
+        if (cbError) {
+          console.error("[v0] Error checking chargebacks:", cbError.message)
+        } else if (chargebacks && chargebacks.length > 0) {
+          const newCb = chargebacks.filter((c) => new Date(c.chargeback_at) > lastCheckRef.current)
+
+          if (newCb.length > 0) {
+            hasNewItems = true
+
+            for (const chargeback of newCb) {
+              const amount = Number(chargeback.gross_value).toFixed(2)
+              const reason = chargeback.chargeback_reason || "Motivo não informado"
+              await playNotification("Estorno Realizado", `R$ ${amount} foi estornado. Motivo: ${reason}`)
+            }
+          }
+        }
+
+        if (hasNewItems) {
           lastCheckRef.current = now
         }
       } catch (error) {
-        console.error("[v0] Error in checkNewTransactions:", error)
+        console.error("[v0] Error in checkNewItems:", error)
       }
     }
 
-    // Check immediately
-    checkNewTransactions()
+    checkNewItems()
+    checkIntervalRef.current = setInterval(checkNewItems, 10000)
 
-    // Set up polling every 10 seconds
-    checkIntervalRef.current = setInterval(checkNewTransactions, 10000)
-
-    // Cleanup
     return () => {
       if (checkIntervalRef.current) {
         clearInterval(checkIntervalRef.current)
