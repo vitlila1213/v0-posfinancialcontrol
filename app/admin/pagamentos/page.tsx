@@ -13,6 +13,8 @@ export default function AdminPagamentosPage() {
   const { withdrawals, clients, payWithdrawal, cancelWithdrawal, isLoading } = useSupabase()
   const [search, setSearch] = useState("")
   const [filterMethod, setFilterMethod] = useState<string>("all")
+  const [paidSearch, setPaidSearch] = useState("")
+  const [paidFilterMethod, setPaidFilterMethod] = useState<string>("all")
   const [selectedWithdrawal, setSelectedWithdrawal] = useState<Withdrawal | null>(null)
   const [proofFile, setProofFile] = useState<File | null>(null)
   const [processing, setProcessing] = useState(false)
@@ -127,6 +129,18 @@ export default function AdminPagamentosPage() {
       client?.email?.toLowerCase().includes(search.toLowerCase())
 
     const matchesMethod = filterMethod === "all" || w.withdrawal_method === filterMethod
+
+    return matchesSearch && matchesMethod
+  })
+
+  const filteredPaidWithdrawals = paidWithdrawals.filter((w) => {
+    const client = getClient(w.user_id)
+    const matchesSearch =
+      paidSearch === "" ||
+      client?.full_name?.toLowerCase().includes(paidSearch.toLowerCase()) ||
+      client?.email?.toLowerCase().includes(paidSearch.toLowerCase())
+
+    const matchesMethod = paidFilterMethod === "all" || w.withdrawal_method === paidFilterMethod
 
     return matchesSearch && matchesMethod
   })
@@ -275,46 +289,111 @@ export default function AdminPagamentosPage() {
       {/* Paid Withdrawals */}
       {paidWithdrawals.length > 0 && (
         <GlassCard className="p-4 sm:p-6">
-          <h3 className="mb-4 text-base font-semibold text-foreground sm:text-lg">
-            Saques Pagos ({paidWithdrawals.length})
-          </h3>
-
-          <div className="space-y-3">
-            {paidWithdrawals.slice(0, 10).map((withdrawal) => {
-              const client = getClient(withdrawal.user_id)
-
-              return (
-                <div
-                  key={withdrawal.id}
-                  className="flex flex-col gap-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/20">
-                      <User className="h-5 w-5 text-emerald-500" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-foreground">{client?.full_name || "Cliente"}</p>
-                      <p className="text-xs text-muted-foreground">
-                        Pago em {new Date(withdrawal.paid_at!).toLocaleDateString("pt-BR")}
-                      </p>
-                    </div>
-                  </div>
-
-                  <p className="text-xl font-bold text-emerald-500">{formatCurrency(withdrawal.amount)}</p>
-
-                  {client?.phone && (
-                    <button
-                      onClick={() => sendWhatsApp(withdrawal)}
-                      className="flex items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-green-700"
-                    >
-                      <MessageCircle className="h-4 w-4" />
-                      WhatsApp
-                    </button>
-                  )}
-                </div>
-              )
-            })}
+          <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <h3 className="text-base font-semibold text-foreground sm:text-lg">
+              Saques Pagos ({filteredPaidWithdrawals.length})
+            </h3>
+            <div className="relative w-full sm:w-64">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Buscar cliente..."
+                value={paidSearch}
+                onChange={(e) => setPaidSearch(e.target.value)}
+                className="border-white/10 bg-white/5 pl-9"
+              />
+            </div>
           </div>
+
+          <div className="mb-4 flex flex-wrap gap-2">
+            <button
+              onClick={() => setPaidFilterMethod("all")}
+              className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                paidFilterMethod === "all"
+                  ? "bg-emerald-500 text-white"
+                  : "bg-white/5 text-muted-foreground hover:bg-white/10"
+              }`}
+            >
+              Todos Métodos
+            </button>
+            <button
+              onClick={() => setPaidFilterMethod("pix")}
+              className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                paidFilterMethod === "pix"
+                  ? "bg-emerald-500 text-white"
+                  : "bg-white/5 text-muted-foreground hover:bg-white/10"
+              }`}
+            >
+              PIX
+            </button>
+            <button
+              onClick={() => setPaidFilterMethod("bank")}
+              className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                paidFilterMethod === "bank"
+                  ? "bg-emerald-500 text-white"
+                  : "bg-white/5 text-muted-foreground hover:bg-white/10"
+              }`}
+            >
+              Transferência
+            </button>
+            <button
+              onClick={() => setPaidFilterMethod("boleto")}
+              className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                paidFilterMethod === "boleto"
+                  ? "bg-emerald-500 text-white"
+                  : "bg-white/5 text-muted-foreground hover:bg-white/10"
+              }`}
+            >
+              Boleto
+            </button>
+          </div>
+
+          {filteredPaidWithdrawals.length === 0 ? (
+            <div className="py-12 text-center">
+              <Wallet className="mx-auto mb-3 h-12 w-12 text-muted-foreground/50" />
+              <p className="text-muted-foreground">Nenhum saque pago encontrado</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredPaidWithdrawals.slice(0, 10).map((withdrawal) => {
+                const client = getClient(withdrawal.user_id)
+
+                return (
+                  <div
+                    key={withdrawal.id}
+                    className="flex flex-col gap-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/20">
+                        <User className="h-5 w-5 text-emerald-500" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-foreground">{client?.full_name || "Cliente"}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Pago em {new Date(withdrawal.paid_at!).toLocaleDateString("pt-BR")}
+                        </p>
+                        <div className="mt-1 flex items-center gap-1 text-xs text-emerald-500">
+                          {getMethodIcon(withdrawal.withdrawal_method)}
+                          <span>{getMethodLabel(withdrawal.withdrawal_method)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <p className="text-xl font-bold text-emerald-500">{formatCurrency(withdrawal.amount)}</p>
+
+                    {client?.phone && (
+                      <button
+                        onClick={() => sendWhatsApp(withdrawal)}
+                        className="flex items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-green-700"
+                      >
+                        <MessageCircle className="h-4 w-4" />
+                        WhatsApp
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </GlassCard>
       )}
 
