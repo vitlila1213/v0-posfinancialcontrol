@@ -8,7 +8,6 @@ import { NotificationsBell } from "@/components/notifications-bell"
 import { AdminNotificationsProvider } from "@/components/admin-notifications-provider"
 import { UserProfileMenu } from "@/components/user-profile-menu"
 import { cn } from "@/lib/utils"
-import { AdminBalanceDisplay } from "@/components/admin-balance-display"
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -37,7 +36,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <div className="lg:hidden w-10" />
               <div className="flex-1" />
               <div className="flex items-center gap-3">
-                <AdminBalanceDisplay />
                 <NotificationsBell />
                 <UserProfileMenu />
               </div>

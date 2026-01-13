@@ -5,7 +5,6 @@ import { useState, useEffect } from "react"
 import { SupabaseProvider } from "@/lib/supabase-context"
 import { ClientSidebar } from "@/components/client-sidebar"
 import { NotificationsBell } from "@/components/notifications-bell"
-import { CompactBalanceCard } from "@/components/compact-balance-card"
 import { ClientNotificationsProvider } from "@/components/client-notifications-provider"
 import { cn } from "@/lib/utils"
 import { UserProfileMenu } from "@/components/user-profile-menu"
@@ -37,7 +36,6 @@ export default function ClienteLayout({ children }: { children: React.ReactNode 
               <div className="lg:hidden w-10" />
               <div className="flex-1" />
               <div className="flex items-center gap-3">
-                <CompactBalanceCard />
                 <NotificationsBell />
                 <UserProfileMenu />
               </div>

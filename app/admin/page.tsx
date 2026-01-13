@@ -1,6 +1,6 @@
 "use client"
 
-import { TrendingUp, DollarSign, Clock, RefreshCw } from "lucide-react"
+import { TrendingUp, DollarSign, Clock, RefreshCw, CheckCircle2 } from "lucide-react"
 import { useSupabase } from "@/lib/supabase-context"
 import { GlassCard } from "@/components/glass-card"
 import { AnimatedNumber } from "@/components/animated-number"
@@ -69,7 +69,21 @@ export default function AdminOverview() {
         </motion.button>
       </div>
 
-      {/* Stats Cards */}
+      <GlassCard className="p-6 sm:p-8 border-2 border-green-500/30 bg-green-500/5">
+        <div className="flex items-center gap-4">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-green-500/20">
+            <CheckCircle2 className="h-8 w-8 text-green-500" />
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground sm:text-base">Valor Total Disponível</p>
+            <p className="text-3xl font-bold text-green-500 sm:text-4xl">
+              <AnimatedNumber value={totalAvailableBalance} />
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">Soma de todos os saldos dos clientes</p>
+          </div>
+        </div>
+      </GlassCard>
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <GlassCard className="p-4 sm:p-6">
           <div className="flex items-center gap-3">
@@ -108,34 +122,6 @@ export default function AdminOverview() {
               <p className="text-xs text-muted-foreground sm:text-sm">Valor Pendente para Saque</p>
               <p className="text-lg font-bold text-purple-500 sm:text-2xl">
                 <AnimatedNumber value={totalPendingWithdrawals} />
-              </p>
-            </div>
-          </div>
-        </GlassCard>
-
-        {/* New Card for Total Available Balance */}
-        <GlassCard className="p-4 sm:p-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-green-500/20 sm:h-12 sm:w-12">
-              {/* Placeholder Icon */}
-              <svg
-                className="h-5 w-5 text-green-500 sm:h-6 sm:w-6"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M12 22s8-4 8-10V6s-8 4-8 10 0 8 8 8z" />
-                <path d="M22 12h-4M6 12H2" />
-                <path d="M12 6v4M12 18v4" />
-              </svg>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground sm:text-sm">Valor Total Disponível</p>
-              <p className="text-lg font-bold text-green-500 sm:text-2xl">
-                <AnimatedNumber value={totalAvailableBalance} />
               </p>
             </div>
           </div>

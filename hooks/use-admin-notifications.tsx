@@ -17,10 +17,12 @@ export function useAdminNotifications(userId: string | undefined, isAdmin: boole
     }
 
     console.log("[v0] ✅ Starting admin notifications monitoring for user:", userId)
+    lastCheckRef.current = new Date(Date.now() - 5 * 60 * 1000)
 
     const checkNewNotifications = async () => {
       try {
         console.log("[v0] 🔍 Checking for new admin notifications at:", new Date().toISOString())
+        console.log("[v0] 📅 Last check was at:", lastCheckRef.current.toISOString())
 
         const { data: notifications, error } = await supabase
           .from("notifications")

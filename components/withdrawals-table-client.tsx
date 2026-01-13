@@ -9,10 +9,18 @@ const statusConfig: Record<string, { label: string; color: string; icon: typeof 
   paid: { label: "Pago", color: "bg-emerald-500/20 text-emerald-500", icon: CheckCircle },
 }
 
-export function WithdrawalsTableClient() {
+interface WithdrawalsTableClientProps {
+  methodFilter?: string
+  statusFilter?: string
+}
+
+export function WithdrawalsTableClient({ methodFilter = "all", statusFilter = "all" }: WithdrawalsTableClientProps) {
   const { user, withdrawals } = useSupabase()
 
-  const userWithdrawals = withdrawals.filter((w) => w.user_id === user?.id)
+  const userWithdrawals = withdrawals
+    .filter((w) => w.user_id === user?.id)
+    .filter((w) => methodFilter === "all" || w.method === methodFilter)
+    .filter((w) => statusFilter === "all" || w.status === statusFilter)
 
   if (userWithdrawals.length === 0) {
     return (

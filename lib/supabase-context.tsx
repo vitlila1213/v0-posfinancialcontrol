@@ -270,33 +270,48 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
 
     const { error } = await supabase.from("transactions").insert({
       user_id: user.id,
-      gross_value: calculation.grossAmount,
-      net_value: calculation.netAmount,
-      fee_value: calculation.feeAmount,
-      fee_percentage: calculation.feePercentage,
+      gross_value: data.grossValue,
       brand: data.brand,
       payment_type: data.paymentType,
       installments: data.installments,
+      fee_percentage: calculation.feePercentage,
+      fee_value: calculation.feeValue,
+      net_value: calculation.netValue,
       receipt_url: data.receiptUrl || null,
       no_receipt_reason: data.noReceiptReason || null,
       status,
+      is_chargeback: false,
     })
 
     if (error) throw error
 
-    const { data: admins } = await supabase.from("profiles").select("id").eq("role", "admin")
+    console.log("[v0] 📝 Transaction created, fetching admins to notify...")
+    const { data: admins, error: adminsError } = await supabase.from("profiles").select("id").eq("role", "admin")
 
-    if (admins) {
-      const paymentTypeLabel = data.paymentType === "debit" ? "Débito" : "Crédito"
-      const statusLabel = data.receiptUrl ? "com comprovante" : "sem comprovante"
+    if (adminsError) {
+      console.error("[v0] ❌ Error fetching admins:", adminsError)
+    } else {
+      console.log("[v0] 👥 Found admins:", admins?.length || 0)
+    }
 
+    if (admins && admins.length > 0) {
       for (const admin of admins) {
-        await supabase.from("notifications").insert({
-          user_id: admin.id,
-          type: data.receiptUrl ? "transaction_pending" : "transaction_no_receipt",
-          title: "Nova Transação",
-          message: `${profile?.full_name || "Cliente"} adicionou ${paymentTypeLabel} de R$ ${calculation.grossAmount.toFixed(2)} (${statusLabel})`,
-        })
+        console.log("[v0] 🔔 Creating notification for admin:", admin.id)
+        const { error: notifError, data: notifData } = await supabase
+          .from("notifications")
+          .insert({
+            user_id: admin.id,
+            type: data.receiptUrl ? "transaction_pending" : "transaction_no_receipt",
+            title: data.receiptUrl ? "Nova Transação Pendente" : "Nova Transação sem Comprovante",
+            message: `${profile?.full_name || "Cliente"} adicionou uma transação de R$ ${data.grossValue.toFixed(2)}${data.receiptUrl ? " com comprovante" : " sem comprovante"}`,
+          })
+          .select()
+
+        if (notifError) {
+          console.error("[v0] ❌ Error creating notification:", notifError)
+        } else {
+          console.log("[v0] ✅ Notification created successfully:", notifData)
+        }
       }
     }
 
@@ -418,6 +433,8 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   }) => {
     if (!user) return
 
+    console.log("[v0] 🚀 requestWithdrawal called with amount:", data.amount, "method:", data.method)
+
     const { error } = await supabase.from("withdrawals").insert({
       user_id: user.id,
       amount: data.amount,
@@ -436,23 +453,46 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       boleto_origin: data.boletoOrigin || null,
     })
 
-    if (error) throw error
+    if (error) {
+      console.error("[v0] ❌ Error creating withdrawal:", error)
+      throw error
+    }
 
-    // Notifica admins
-    const { data: admins } = await supabase.from("profiles").select("id").eq("role", "admin")
+    console.log("[v0] ✅ Withdrawal created successfully")
 
-    if (admins) {
+    console.log("[v0] 📢 Fetching admins to notify...")
+    const { data: admins, error: adminsError } = await supabase.from("profiles").select("id").eq("role", "admin")
+
+    if (adminsError) {
+      console.error("[v0] ❌ Error fetching admins:", adminsError)
+    } else {
+      console.log("[v0] 👥 Found admins:", admins?.length || 0, admins)
+    }
+
+    if (admins && admins.length > 0) {
+      console.log("[v0] 🔔 Creating notifications for admins...")
       for (const admin of admins) {
-        await supabase.from("notifications").insert({
+        console.log("[v0] 📨 Creating notification for admin:", admin.id)
+        const { error: notifError } = await supabase.from("notifications").insert({
           user_id: admin.id,
           type: "withdrawal_requested",
           title: "Nova Solicitação de Saque",
           message: `${profile?.full_name || "Cliente"} solicitou um saque de R$ ${data.amount.toFixed(2)}`,
         })
+
+        if (notifError) {
+          console.error("[v0] ❌ Error creating notification for admin:", admin.id, notifError)
+        } else {
+          console.log("[v0] ✅ Notification created successfully for admin:", admin.id)
+        }
       }
+    } else {
+      console.log("[v0] ⚠️ No admins found to notify")
     }
 
+    console.log("[v0] 🔄 Refreshing data...")
     await refreshData()
+    console.log("[v0] ✅ Data refreshed")
   }
 
   const payWithdrawal = async (withdrawalId: string, proofUrl: string) => {

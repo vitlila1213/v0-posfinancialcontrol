@@ -1,7 +1,18 @@
 "use client"
 
 import { motion } from "framer-motion"
-import { TrendingUp, Clock, DollarSign, Plus, Calculator, FileDown, Eye, EyeOff, RefreshCw } from "lucide-react"
+import {
+  TrendingUp,
+  Clock,
+  DollarSign,
+  Plus,
+  Calculator,
+  FileDown,
+  Eye,
+  EyeOff,
+  RefreshCw,
+  CheckCircle,
+} from "lucide-react"
 import { useSupabase } from "@/lib/supabase-context"
 import { GlassCard } from "@/components/glass-card"
 import { AnimatedNumber } from "@/components/animated-number"
@@ -78,7 +89,7 @@ export default function ClienteDashboard() {
     <div className="space-y-6">
       <AnnouncementPopup />
 
-      {/* Header with Balance Card moved to top right */}
+      {/* Header */}
       <div>
         <h1 className="text-xl font-bold text-foreground sm:text-2xl">
           Olá, {profile?.full_name?.split(" ")[0] || "Cliente"}!
@@ -92,19 +103,8 @@ export default function ClienteDashboard() {
         <motion.button
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
-          onClick={handleRefreshBalance}
-          disabled={isRefreshing}
-          className="flex items-center justify-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-2.5 text-sm font-medium text-cyan-400 transition-colors hover:bg-cyan-500/20 disabled:opacity-50"
-          title="Atualizar saldo"
-        >
-          <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
-          <span className="hidden sm:inline">Atualizar</span>
-        </motion.button>
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
           onClick={() => setShowBalance(!showBalance)}
-          className="flex items-center justify-center gap-2 rounded-xl border border-slate-500/30 bg-slate-500/10 px-4 py-2.5 text-sm font-medium text-slate-400 transition-colors hover:bg-slate-500/20"
+          className="flex items-center justify-center gap-2 rounded-xl border border-slate-500/30 bg-slate-500/10 px-4 py-2.5 text-sm font-medium text-slate-400 transition-colors hover:bg-slate-500/20 disabled:opacity-50"
           title={showBalance ? "Ocultar saldos" : "Mostrar saldos"}
         >
           {showBalance ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
@@ -139,6 +139,33 @@ export default function ClienteDashboard() {
         </motion.button>
       </div>
 
+      {/* Featured Balance Card */}
+      <GlassCard className="border-2 border-emerald-500/30 bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 p-6">
+        <div className="flex items-start gap-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/20 sm:h-14 sm:w-14">
+            <CheckCircle className="h-6 w-6 text-emerald-500 sm:h-7 sm:w-7" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm text-muted-foreground sm:text-base">Valor Total Disponível</p>
+            <p className="text-3xl font-bold text-emerald-500 sm:text-4xl">
+              {showBalance ? <AnimatedNumber value={balances.available} /> : "R$ •••••"}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">Seu saldo disponível para saque</p>
+          </div>
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={handleRefreshBalance}
+            disabled={isRefreshing}
+            className="flex h-10 w-10 items-center justify-center rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 transition-colors hover:bg-emerald-500/20 disabled:opacity-50"
+            title="Atualizar saldo"
+          >
+            <RefreshCw className={`h-5 w-5 ${isRefreshing ? "animate-spin" : ""}`} />
+          </motion.button>
+        </div>
+      </GlassCard>
+
+      {/* Other Balance Cards */}
       <div className="grid gap-4 sm:grid-cols-3">
         <GlassCard className="p-4 sm:p-6">
           <div className="flex items-center gap-3">
