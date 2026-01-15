@@ -19,6 +19,7 @@ import {
   Eye,
   EyeOff,
   CreditCard,
+  DollarSign,
 } from "lucide-react"
 import { useSupabase } from "@/lib/supabase-context"
 import { GlassCard } from "@/components/glass-card"
@@ -40,9 +41,10 @@ import { CustomPlanModal } from "@/components/custom-plan-modal" // Import custo
 import { createClient } from "@/lib/supabase/client" // Import supabase client
 import { Badge } from "@/components/ui/badge" // Import Badge component
 import Link from "next/link" // Import Link for navigation
+import { toast } from "sonner" // Import toast for notifications
 
 export default function AdminClientesPage() {
-  const { clients, transactions, getClientBalances, assignClientPlan, isLoading } = useSupabase()
+  const { clients, transactions, getClientBalances, assignClientPlan, isLoading, refreshData } = useSupabase()
   const [search, setSearch] = useState("")
   const [planFilter, setPlanFilter] = useState<string | null>(null) // Added plan filter state
   const [selectedClient, setSelectedClient] = useState<Profile | null>(null)
@@ -590,8 +592,36 @@ export default function AdminClientesPage() {
                     <CreditCard className="mr-2 h-4 w-4" />
                     Plano
                   </Button>
+                  <Button variant="outline" size="sm" onClick={() => setAdjustmentClient(client)}>
+                    <DollarSign className="h-4 w-4" />
+                  </Button>
                   <Button variant="default" size="sm" asChild>
                     <Link href={`/admin/clientes/${client.id}`}>Ver Painel</Link>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={async () => {
+                      if (
+                        !confirm(`Tem certeza que deseja excluir ${client.full_name}? Esta ação não pode ser desfeita.`)
+                      ) {
+                        return
+                      }
+
+                      try {
+                        const { error } = await createClient().from("profiles").delete().eq("id", client.id)
+
+                        if (error) throw error
+
+                        toast.success("Cliente excluído com sucesso")
+                        refreshData()
+                      } catch (error: any) {
+                        console.error("Erro ao excluir cliente:", error)
+                        toast.error(`Erro ao excluir cliente: ${error.message}`)
+                      }
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4 text-rose-500" />
                   </Button>
                 </div>
               </div>

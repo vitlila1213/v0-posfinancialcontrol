@@ -89,8 +89,10 @@ export default function ClientSignupPage() {
       if (signUpError) throw signUpError
 
       if (signUpData.user) {
-        console.log("[v0] Marcando código como usado")
-        const { error: updateError } = await supabase
+        console.log("[v0] ✅ Usuário criado com sucesso, ID:", signUpData.user.id)
+        console.log("[v0] 📝 Marcando código como usado:", accessCode.trim().toUpperCase())
+
+        const { data: updateData, error: updateError } = await supabase
           .from("access_codes")
           .update({
             is_used: true,
@@ -98,9 +100,12 @@ export default function ClientSignupPage() {
             used_at: new Date().toISOString(),
           })
           .eq("code", accessCode.trim().toUpperCase())
+          .select() // Added select to get updated data
 
         if (updateError) {
-          console.error("[v0] Erro ao marcar código como usado:", updateError)
+          console.error("[v0] ❌ Erro ao marcar código como usado:", updateError)
+        } else {
+          console.log("[v0] ✅ Código marcado como usado com sucesso:", updateData)
         }
       }
 

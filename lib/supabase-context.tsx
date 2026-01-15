@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, useCallback, useMemo, type ReactNode } from "react"
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react"
 import { createClient } from "@/lib/supabase/client"
 import type { User } from "@supabase/supabase-js"
 import type {
@@ -66,6 +66,7 @@ interface SupabaseContextType {
   // Profile actions
   updateProfile: (updates: Partial<Profile>) => Promise<void>
   assignClientPlan: (clientId: string, plan: PlanType) => Promise<void>
+  deleteClient: (clientId: string) => Promise<void>
   // Balance adjustment actions
   addBalanceAdjustment: (userId: string, type: AdjustmentType, amount: number, reason: string) => Promise<void>
   // Chargeback actions
@@ -275,8 +276,8 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       payment_type: data.paymentType,
       installments: data.installments,
       fee_percentage: calculation.feePercentage,
-      fee_value: calculation.feeValue,
-      net_value: calculation.netValue,
+      fee_value: calculation.feeAmount,
+      net_value: calculation.netAmount,
       receipt_url: data.receiptUrl || null,
       no_receipt_reason: data.noReceiptReason || null,
       status,
@@ -839,6 +840,40 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     return adjustment
   }
 
+  const registerChargeback = async (transactionId: string, reason: string) => {
+    console.log("[v0] Registering chargeback for transaction:", transactionId)
+
+    const { error } = await supabase
+      .from("transactions")
+      .update({
+        is_chargeback: true,
+        chargeback_reason: reason,
+        chargeback_at: new Date().toISOString(),
+      })
+      .eq("id", transactionId)
+
+    if (error) {
+      console.error("[v0] Error updating transaction:", error.message)
+      throw error
+    }
+
+    await refreshData()
+  }
+
+  const deleteClient = async (clientId: string) => {
+    console.log("[v0] Deleting client:", clientId)
+
+    const { error } = await supabase.from("profiles").delete().eq("id", clientId)
+
+    if (error) {
+      console.error("[v0] Error deleting client:", error.message)
+      throw new Error(`Erro ao excluir cliente: ${error.message}`)
+    }
+
+    console.log("[v0] Client deleted successfully")
+    await refreshData()
+  }
+
   const logout = async () => {
     await supabase.auth.signOut()
     window.location.href = "/auth/login"
@@ -848,41 +883,40 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     // Placeholder for balance fetching logic
   }, [])
 
-  const contextValue = useMemo(
-    () => ({
-      user,
-      profile,
-      isLoading,
-      transactions,
-      withdrawals,
-      notifications,
-      clients,
-      balanceAdjustments,
-      customPlans,
-      addTransaction,
-      updateTransaction,
-      uploadReceipt,
-      verifyTransaction,
-      rejectTransaction,
-      requestWithdrawal,
-      payWithdrawal,
-      cancelWithdrawal,
-      markNotificationRead,
-      markAllNotificationsRead,
-      getClientBalances,
-      updateProfile,
-      assignClientPlan,
-      createCustomPlan,
-      updateCustomPlan,
-      deleteCustomPlan,
-      fetchCustomPlans,
-      addBalanceAdjustment,
-      refreshData,
-      logout,
-      supabase: createClient(),
-    }),
-    [user, profile, isLoading, transactions, withdrawals, notifications, clients, balanceAdjustments, customPlans],
-  )
+  const contextValue: SupabaseContextType = {
+    user,
+    profile,
+    isLoading,
+    transactions,
+    withdrawals,
+    notifications,
+    clients,
+    balanceAdjustments,
+    customPlans,
+    addTransaction,
+    updateTransaction,
+    uploadReceipt,
+    verifyTransaction,
+    rejectTransaction,
+    requestWithdrawal,
+    payWithdrawal,
+    cancelWithdrawal,
+    markNotificationRead,
+    markAllNotificationsRead,
+    getClientBalances,
+    updateProfile,
+    assignClientPlan,
+    createCustomPlan,
+    updateCustomPlan,
+    deleteCustomPlan,
+    fetchCustomPlans,
+    addBalanceAdjustment,
+    registerChargeback,
+    deleteClient,
+    refreshData,
+    logout,
+    supabase: createClient(),
+  }
 
   return <SupabaseContext.Provider value={contextValue}>{children}</SupabaseContext.Provider>
 }
