@@ -44,7 +44,8 @@ import Link from "next/link" // Import Link for navigation
 import { toast } from "sonner" // Import toast for notifications
 
 export default function AdminClientesPage() {
-  const { clients, transactions, getClientBalances, assignClientPlan, isLoading, refreshData } = useSupabase()
+  const { clients, transactions, getClientBalances, assignClientPlan, isLoading, refreshData, deleteClient } =
+    useSupabase()
   const [search, setSearch] = useState("")
   const [planFilter, setPlanFilter] = useState<string | null>(null) // Added plan filter state
   const [selectedClient, setSelectedClient] = useState<Profile | null>(null)
@@ -413,6 +414,32 @@ export default function AdminClientesPage() {
 
   const activeClients = clientsWithPlan // This is already filtered by plan
 
+  const handleDeleteClient = async (clientId: string, clientName: string) => {
+    console.log("[v0] handleDeleteClient called with:", { clientId, clientName })
+
+    const confirmed = window.confirm(
+      `Tem certeza que deseja excluir o cliente ${clientName}? Esta ação não pode ser desfeita e removerá permanentemente o cliente e todos os seus dados do sistema.`,
+    )
+
+    console.log("[v0] User confirmation:", confirmed)
+
+    if (!confirmed) {
+      console.log("[v0] Delete cancelled by user")
+      return
+    }
+
+    try {
+      console.log("[v0] Calling deleteClient from context...")
+      await deleteClient(clientId)
+      console.log("[v0] Delete successful, refreshing data...")
+      toast.success("Cliente excluído com sucesso") // Use toast.success directly
+      refreshData()
+    } catch (error: any) {
+      console.error("[v0] Error in handleDeleteClient:", error)
+      toast.error(`Erro ao excluir cliente: ${error.message}`) // Use toast.error directly
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -602,23 +629,8 @@ export default function AdminClientesPage() {
                     variant="ghost"
                     size="sm"
                     onClick={async () => {
-                      if (
-                        !confirm(`Tem certeza que deseja excluir ${client.full_name}? Esta ação não pode ser desfeita.`)
-                      ) {
-                        return
-                      }
-
-                      try {
-                        const { error } = await createClient().from("profiles").delete().eq("id", client.id)
-
-                        if (error) throw error
-
-                        toast.success("Cliente excluído com sucesso")
-                        refreshData()
-                      } catch (error: any) {
-                        console.error("Erro ao excluir cliente:", error)
-                        toast.error(`Erro ao excluir cliente: ${error.message}`)
-                      }
+                      // Use the new handleDeleteClient function
+                      await handleDeleteClient(client.id, client.full_name || "Cliente sem nome")
                     }}
                   >
                     <Trash2 className="h-4 w-4 text-rose-500" />
