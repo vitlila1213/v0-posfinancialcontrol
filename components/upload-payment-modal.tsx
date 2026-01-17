@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -25,6 +24,8 @@ export function UploadPaymentModal({ open, onOpenChange, withdrawal, onSuccess }
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0]
     if (!selectedFile) return
+
+    console.log("[v0] File selected:", selectedFile.name, selectedFile.type)
 
     // Validate file type
     const validTypes = ["image/jpeg", "image/png", "image/jpg", "image/webp", "application/pdf"]
@@ -54,86 +55,90 @@ export function UploadPaymentModal({ open, onOpenChange, withdrawal, onSuccess }
   }
 
   const handleUpload = async () => {
-    if (!file || !withdrawal) return
+    console.log("[v0] handleUpload called", { file, withdrawal })
+
+    if (!file || !withdrawal) {
+      console.log("[v0] Missing file or withdrawal data")
+      toast.error("Selecione um arquivo primeiro")
+      return
+    }
 
     setIsUploading(true)
-    console.log("[v0] 🚀 Starting payment proof upload for withdrawal:", withdrawal.id)
 
     try {
+      console.log("[v0] Starting upload process...")
+
       // Generate unique filename
       const fileExt = file.name.split(".").pop()
       const fileName = `${withdrawal.id}-${Date.now()}.${fileExt}`
-      const filePath = `${fileName}`
 
-      console.log("[v0] 📤 Uploading file to storage:", filePath)
+      console.log("[v0] Uploading to payment-proofs bucket:", fileName)
 
       // Upload to Supabase Storage
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from("payment-proofs")
-        .upload(filePath, file, {
+        .upload(fileName, file, {
           cacheControl: "3600",
-          upsert: false,
+          upsert: true,
         })
 
       if (uploadError) {
-        console.error("[v0] ❌ Upload error:", uploadError)
-        throw uploadError
+        console.error("[v0] Upload error:", uploadError)
+        throw new Error(uploadError.message)
       }
 
-      console.log("[v0] ✅ File uploaded successfully:", uploadData)
+      console.log("[v0] Upload successful:", uploadData)
 
       // Get public URL
       const {
         data: { publicUrl },
-      } = supabase.storage.from("payment-proofs").getPublicUrl(filePath)
+      } = supabase.storage.from("payment-proofs").getPublicUrl(fileName)
 
-      console.log("[v0] 🔗 Public URL generated:", publicUrl)
+      console.log("[v0] Public URL:", publicUrl)
 
+      // Get current user
       const { data: userData } = await supabase.auth.getUser()
 
-      console.log("[v0] 💾 Updating withdrawal status...")
+      console.log("[v0] Updating withdrawal in database...")
 
-      // Update withdrawal with proof URL and mark as paid
+      // Update withdrawal
       const { error: updateError } = await supabase
         .from("withdrawals")
         .update({
           admin_proof_url: publicUrl,
           status: "paid",
           paid_at: new Date().toISOString(),
-          paid_by: userData?.user?.id,
+          paid_by: userData?.user?.id || null,
         })
         .eq("id", withdrawal.id)
 
       if (updateError) {
-        console.error("[v0] ❌ Update error:", updateError)
-        throw updateError
+        console.error("[v0] Update error:", updateError)
+        throw new Error(updateError.message)
       }
 
-      console.log("[v0] ✅ Withdrawal updated successfully")
+      console.log("[v0] Withdrawal updated successfully")
 
-      toast.success("Comprovante enviado e saque marcado como pago!")
+      toast.success("Comprovante enviado com sucesso!")
 
+      // Reset state
       setFile(null)
       setPreview(null)
-
-      console.log("[v0] 🔄 Calling onSuccess callback...")
-
-      try {
-        await onSuccess()
-        console.log("[v0] ✅ onSuccess callback completed")
-      } catch (err) {
-        console.error("[v0] ⚠️ onSuccess callback error (non-critical):", err)
-      }
-
-      console.log("[v0] 🚪 Closing modal...")
-
       setIsUploading(false)
+
+      // Close modal
       onOpenChange(false)
 
-      console.log("[v0] ✅ Upload process completed successfully")
+      // Refresh data
+      if (onSuccess) {
+        console.log("[v0] Calling onSuccess...")
+        setTimeout(() => onSuccess(), 100)
+      }
+
+      console.log("[v0] Process completed")
     } catch (error: any) {
-      console.error("[v0] ❌ Error uploading payment proof:", error)
-      toast.error(`Erro ao enviar comprovante: ${error.message}`)
+      console.error("[v0] Error in handleUpload:", error)
+      toast.error(`Erro: ${error.message || "Falha ao enviar comprovante"}`)
       setIsUploading(false)
     }
   }
@@ -144,12 +149,20 @@ export function UploadPaymentModal({ open, onOpenChange, withdrawal, onSuccess }
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(newOpen) => {
+        console.log("[v0] Dialog onOpenChange:", newOpen)
+        if (!isUploading) {
+          onOpenChange(newOpen)
+        }
+      }}
+    >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Enviar Comprovante de Pagamento</DialogTitle>
           <DialogDescription>
-            Faça upload do comprovante de pagamento para o saque de R$ {withdrawal?.amount?.toFixed(2)}
+            Faça upload do comprovante de pagamento para o saque de R$ {withdrawal?.amount?.toFixed(2) || "0.00"}
           </DialogDescription>
         </DialogHeader>
 
@@ -167,10 +180,11 @@ export function UploadPaymentModal({ open, onOpenChange, withdrawal, onSuccess }
                 onChange={handleFileChange}
                 className="hidden"
                 id="proof-upload"
+                disabled={isUploading}
               />
               <label
                 htmlFor="proof-upload"
-                className="cursor-pointer rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700"
+                className="cursor-pointer rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
               >
                 Escolher Arquivo
               </label>
@@ -193,7 +207,8 @@ export function UploadPaymentModal({ open, onOpenChange, withdrawal, onSuccess }
                 </div>
                 <button
                   onClick={handleRemoveFile}
-                  className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
+                  disabled={isUploading}
+                  className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground disabled:opacity-50"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -202,11 +217,22 @@ export function UploadPaymentModal({ open, onOpenChange, withdrawal, onSuccess }
           )}
 
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isUploading} className="flex-1">
+            <Button
+              variant="outline"
+              onClick={() => {
+                console.log("[v0] Cancel button clicked")
+                onOpenChange(false)
+              }}
+              disabled={isUploading}
+              className="flex-1"
+            >
               Cancelar
             </Button>
             <Button
-              onClick={handleUpload}
+              onClick={() => {
+                console.log("[v0] Upload button clicked")
+                handleUpload()
+              }}
               disabled={!file || isUploading}
               className="flex-1 bg-emerald-600 hover:bg-emerald-700"
             >

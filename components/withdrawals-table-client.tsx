@@ -15,45 +15,10 @@ interface WithdrawalsTableClientProps {
   statusFilter?: string
 }
 
-const handleDownloadProof = async (proofUrl: string, withdrawalId: string) => {
-  try {
-    console.log("[v0] Downloading proof from:", proofUrl)
-
-    // Fetch the file as a blob
-    const response = await fetch(proofUrl)
-    if (!response.ok) {
-      throw new Error("Failed to fetch proof")
-    }
-
-    const blob = await response.blob()
-
-    // Get file extension from URL
-    const urlParts = proofUrl.split("/")
-    const fileName = urlParts[urlParts.length - 1]
-    const fileExt = fileName.split(".").pop() || "pdf"
-
-    // Create a download link
-    const url = window.URL.createObjectURL(blob)
-    const link = document.createElement("a")
-    link.href = url
-    link.download = `comprovante-saque-${withdrawalId.substring(0, 8)}.${fileExt}`
-
-    // Trigger download
-    document.body.appendChild(link)
-    link.click()
-
-    // Cleanup
-    document.body.removeChild(link)
-    window.URL.revokeObjectURL(url)
-
-    console.log("[v0] Proof downloaded successfully")
-    toast.success("Comprovante baixado com sucesso!")
-  } catch (error) {
-    console.error("[v0] Error downloading proof:", error)
-    toast.error("Erro ao baixar comprovante")
-
-    window.open(proofUrl, "_blank")
-  }
+const handleDownloadProof = (proofUrl: string) => {
+  console.log("[v0] Opening proof in new tab:", proofUrl)
+  window.open(proofUrl, "_blank")
+  toast.success("Abrindo comprovante...")
 }
 
 export function WithdrawalsTableClient({ methodFilter = "all", statusFilter = "all" }: WithdrawalsTableClientProps) {
@@ -107,7 +72,7 @@ export function WithdrawalsTableClient({ methodFilter = "all", statusFilter = "a
 
               {withdrawal.status === "paid" && withdrawal.admin_proof_url && (
                 <button
-                  onClick={() => handleDownloadProof(withdrawal.admin_proof_url!, withdrawal.id)}
+                  onClick={() => handleDownloadProof(withdrawal.admin_proof_url!)}
                   className="flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700"
                 >
                   <Download className="h-3 w-3" />
