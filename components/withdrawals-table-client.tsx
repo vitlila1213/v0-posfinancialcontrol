@@ -1,8 +1,9 @@
 "use client"
 
-import { Wallet, Clock, CheckCircle, FileText } from "lucide-react"
+import { Wallet, Clock, CheckCircle, Download } from "lucide-react"
 import { formatCurrency } from "@/lib/pos-rates"
 import { useSupabase } from "@/lib/supabase-context"
+import { createBrowserClient } from "@/lib/supabase-client"
 
 const statusConfig: Record<string, { label: string; color: string; icon: typeof Clock }> = {
   pending: { label: "Pendente", color: "bg-amber-500/20 text-amber-500", icon: Clock },
@@ -12,6 +13,48 @@ const statusConfig: Record<string, { label: string; color: string; icon: typeof 
 interface WithdrawalsTableClientProps {
   methodFilter?: string
   statusFilter?: string
+}
+
+const handleDownloadProof = async (proofUrl: string, withdrawalId: string) => {
+  try {
+    console.log("[v0] Downloading proof from URL:", proofUrl)
+
+    const supabase = createBrowserClient()
+
+    // Extract the file path from the URL if it's already a full URL
+    let filePath = proofUrl
+    if (proofUrl.includes("/payment-proofs/")) {
+      const parts = proofUrl.split("/payment-proofs/")
+      filePath = parts[1]?.split("?")[0] || proofUrl
+    }
+
+    console.log("[v0] Extracted file path:", filePath)
+
+    // Get public URL from Supabase Storage
+    const { data } = supabase.storage.from("payment-proofs").getPublicUrl(filePath)
+
+    console.log("[v0] Public URL:", data.publicUrl)
+
+    // Download the file
+    const response = await fetch(data.publicUrl)
+    if (!response.ok) throw new Error("Failed to download file")
+
+    const blob = await response.blob()
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `comprovante-saque-${withdrawalId}.${blob.type.split("/")[1] || "pdf"}`
+    document.body.appendChild(a)
+    a.click()
+    window.URL.revokeObjectURL(url)
+    document.body.removeChild(a)
+
+    console.log("[v0] File downloaded successfully")
+  } catch (error) {
+    console.error("[v0] Error downloading proof:", error)
+    // If direct download fails, try opening in new tab
+    window.open(proofUrl, "_blank")
+  }
 }
 
 export function WithdrawalsTableClient({ methodFilter = "all", statusFilter = "all" }: WithdrawalsTableClientProps) {
@@ -64,16 +107,13 @@ export function WithdrawalsTableClient({ methodFilter = "all", statusFilter = "a
               <span className={`rounded-full px-3 py-1 text-xs font-medium ${status.color}`}>{status.label}</span>
 
               {withdrawal.status === "paid" && withdrawal.admin_proof_url && (
-                <a
-                  href={withdrawal.admin_proof_url}
-                  download
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  onClick={() => handleDownloadProof(withdrawal.admin_proof_url!, withdrawal.id)}
                   className="flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700"
                 >
-                  <FileText className="h-3 w-3" />
+                  <Download className="h-3 w-3" />
                   Ver Comprovante
-                </a>
+                </button>
               )}
             </div>
           </div>
