@@ -89,6 +89,8 @@ export function UploadPaymentModal({ open, onOpenChange, withdrawal, onSuccess }
 
       console.log("[v0] Public URL generated:", publicUrl)
 
+      const { data: userData } = await supabase.auth.getUser()
+
       // Update withdrawal with proof URL and mark as paid
       const { error: updateError } = await supabase
         .from("withdrawals")
@@ -96,7 +98,7 @@ export function UploadPaymentModal({ open, onOpenChange, withdrawal, onSuccess }
           admin_proof_url: publicUrl,
           status: "paid",
           paid_at: new Date().toISOString(),
-          paid_by: (await supabase.auth.getUser()).data.user?.id,
+          paid_by: userData?.user?.id,
         })
         .eq("id", withdrawal.id)
 
@@ -108,16 +110,21 @@ export function UploadPaymentModal({ open, onOpenChange, withdrawal, onSuccess }
       console.log("[v0] Withdrawal updated successfully")
 
       toast.success("Comprovante enviado e saque marcado como pago!")
-      onSuccess()
-      onOpenChange(false)
 
-      // Reset state
       setFile(null)
       setPreview(null)
+      setIsUploading(false)
+
+      // Call onSuccess to refresh data
+      onSuccess()
+
+      // Close modal after a brief delay to ensure state updates
+      setTimeout(() => {
+        onOpenChange(false)
+      }, 100)
     } catch (error: any) {
       console.error("[v0] Error uploading payment proof:", error)
       toast.error(`Erro ao enviar comprovante: ${error.message}`)
-    } finally {
       setIsUploading(false)
     }
   }

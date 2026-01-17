@@ -3,7 +3,7 @@
 import { Wallet, Clock, CheckCircle, Download } from "lucide-react"
 import { formatCurrency } from "@/lib/pos-rates"
 import { useSupabase } from "@/lib/supabase-context"
-import { createBrowserClient } from "@/lib/supabase-client"
+import { toast } from "react-toastify"
 
 const statusConfig: Record<string, { label: string; color: string; icon: typeof Clock }> = {
   pending: { label: "Pendente", color: "bg-amber-500/20 text-amber-500", icon: Clock },
@@ -17,42 +17,41 @@ interface WithdrawalsTableClientProps {
 
 const handleDownloadProof = async (proofUrl: string, withdrawalId: string) => {
   try {
-    console.log("[v0] Downloading proof from URL:", proofUrl)
+    console.log("[v0] Downloading proof from:", proofUrl)
 
-    const supabase = createBrowserClient()
-
-    // Extract the file path from the URL if it's already a full URL
-    let filePath = proofUrl
-    if (proofUrl.includes("/payment-proofs/")) {
-      const parts = proofUrl.split("/payment-proofs/")
-      filePath = parts[1]?.split("?")[0] || proofUrl
+    // Fetch the file as a blob
+    const response = await fetch(proofUrl)
+    if (!response.ok) {
+      throw new Error("Failed to fetch proof")
     }
 
-    console.log("[v0] Extracted file path:", filePath)
-
-    // Get public URL from Supabase Storage
-    const { data } = supabase.storage.from("payment-proofs").getPublicUrl(filePath)
-
-    console.log("[v0] Public URL:", data.publicUrl)
-
-    // Download the file
-    const response = await fetch(data.publicUrl)
-    if (!response.ok) throw new Error("Failed to download file")
-
     const blob = await response.blob()
-    const url = window.URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `comprovante-saque-${withdrawalId}.${blob.type.split("/")[1] || "pdf"}`
-    document.body.appendChild(a)
-    a.click()
-    window.URL.revokeObjectURL(url)
-    document.body.removeChild(a)
 
-    console.log("[v0] File downloaded successfully")
+    // Get file extension from URL
+    const urlParts = proofUrl.split("/")
+    const fileName = urlParts[urlParts.length - 1]
+    const fileExt = fileName.split(".").pop() || "pdf"
+
+    // Create a download link
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = `comprovante-saque-${withdrawalId.substring(0, 8)}.${fileExt}`
+
+    // Trigger download
+    document.body.appendChild(link)
+    link.click()
+
+    // Cleanup
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+
+    console.log("[v0] Proof downloaded successfully")
+    toast.success("Comprovante baixado com sucesso!")
   } catch (error) {
     console.error("[v0] Error downloading proof:", error)
-    // If direct download fails, try opening in new tab
+    toast.error("Erro ao baixar comprovante")
+
     window.open(proofUrl, "_blank")
   }
 }
