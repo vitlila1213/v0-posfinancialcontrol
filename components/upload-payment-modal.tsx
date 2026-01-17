@@ -57,7 +57,7 @@ export function UploadPaymentModal({ open, onOpenChange, withdrawal, onSuccess }
     if (!file || !withdrawal) return
 
     setIsUploading(true)
-    console.log("[v0] Starting payment proof upload for withdrawal:", withdrawal.id)
+    console.log("[v0] 🚀 Starting payment proof upload for withdrawal:", withdrawal.id)
 
     try {
       // Generate unique filename
@@ -65,7 +65,7 @@ export function UploadPaymentModal({ open, onOpenChange, withdrawal, onSuccess }
       const fileName = `${withdrawal.id}-${Date.now()}.${fileExt}`
       const filePath = `${fileName}`
 
-      console.log("[v0] Uploading file to storage:", filePath)
+      console.log("[v0] 📤 Uploading file to storage:", filePath)
 
       // Upload to Supabase Storage
       const { data: uploadData, error: uploadError } = await supabase.storage
@@ -76,20 +76,22 @@ export function UploadPaymentModal({ open, onOpenChange, withdrawal, onSuccess }
         })
 
       if (uploadError) {
-        console.error("[v0] Upload error:", uploadError)
+        console.error("[v0] ❌ Upload error:", uploadError)
         throw uploadError
       }
 
-      console.log("[v0] File uploaded successfully:", uploadData)
+      console.log("[v0] ✅ File uploaded successfully:", uploadData)
 
       // Get public URL
       const {
         data: { publicUrl },
       } = supabase.storage.from("payment-proofs").getPublicUrl(filePath)
 
-      console.log("[v0] Public URL generated:", publicUrl)
+      console.log("[v0] 🔗 Public URL generated:", publicUrl)
 
       const { data: userData } = await supabase.auth.getUser()
+
+      console.log("[v0] 💾 Updating withdrawal status...")
 
       // Update withdrawal with proof URL and mark as paid
       const { error: updateError } = await supabase
@@ -103,27 +105,34 @@ export function UploadPaymentModal({ open, onOpenChange, withdrawal, onSuccess }
         .eq("id", withdrawal.id)
 
       if (updateError) {
-        console.error("[v0] Update error:", updateError)
+        console.error("[v0] ❌ Update error:", updateError)
         throw updateError
       }
 
-      console.log("[v0] Withdrawal updated successfully")
+      console.log("[v0] ✅ Withdrawal updated successfully")
 
       toast.success("Comprovante enviado e saque marcado como pago!")
 
       setFile(null)
       setPreview(null)
+
+      console.log("[v0] 🔄 Calling onSuccess callback...")
+
+      try {
+        await onSuccess()
+        console.log("[v0] ✅ onSuccess callback completed")
+      } catch (err) {
+        console.error("[v0] ⚠️ onSuccess callback error (non-critical):", err)
+      }
+
+      console.log("[v0] 🚪 Closing modal...")
+
       setIsUploading(false)
+      onOpenChange(false)
 
-      // Call onSuccess to refresh data
-      onSuccess()
-
-      // Close modal after a brief delay to ensure state updates
-      setTimeout(() => {
-        onOpenChange(false)
-      }, 100)
+      console.log("[v0] ✅ Upload process completed successfully")
     } catch (error: any) {
-      console.error("[v0] Error uploading payment proof:", error)
+      console.error("[v0] ❌ Error uploading payment proof:", error)
       toast.error(`Erro ao enviar comprovante: ${error.message}`)
       setIsUploading(false)
     }
