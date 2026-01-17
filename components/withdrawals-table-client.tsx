@@ -66,12 +66,13 @@ export function WithdrawalsTableClient({ methodFilter = "all", statusFilter = "a
               {withdrawal.status === "paid" && withdrawal.admin_proof_url && (
                 <a
                   href={withdrawal.admin_proof_url}
+                  download
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-1 text-sm text-emerald-500 hover:underline"
+                  className="flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700"
                 >
-                  <FileText className="h-4 w-4" />
-                  Comprovante
+                  <FileText className="h-3 w-3" />
+                  Ver Comprovante
                 </a>
               )}
             </div>

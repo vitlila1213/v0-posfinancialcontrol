@@ -1,13 +1,14 @@
 "use client"
 
 import { useState } from "react"
-import { Search, Wallet, Upload, MessageCircle, User, X, Loader2, FileText, CreditCard, QrCode } from "lucide-react"
+import { Search, Wallet, Upload, MessageCircle, User, X, FileText, CreditCard, QrCode } from "lucide-react"
 import { useSupabase } from "@/lib/supabase-context"
 import { GlassCard } from "@/components/glass-card"
 import { Input } from "@/components/ui/input"
 import { formatCurrency } from "@/lib/pos-rates"
 import { motion, AnimatePresence } from "framer-motion"
 import type { Withdrawal } from "@/lib/types"
+import { UploadPaymentModal } from "@/components/upload-payment-modal"
 
 export default function AdminPagamentosPage() {
   const { withdrawals, clients, payWithdrawal, cancelWithdrawal, isLoading } = useSupabase()
@@ -15,11 +16,15 @@ export default function AdminPagamentosPage() {
   const [filterMethod, setFilterMethod] = useState<string>("all")
   const [paidSearch, setPaidSearch] = useState("")
   const [paidFilterMethod, setPaidFilterMethod] = useState<string>("all")
-  const [selectedWithdrawal, setSelectedWithdrawal] = useState<Withdrawal | null>(null)
-  const [proofFile, setProofFile] = useState<File | null>(null)
-  const [processing, setProcessing] = useState(false)
+  const [selectedWithdrawal, setSelectedWithdrawal] = useState<any | null>(null)
+  const [showUploadModal, setShowUploadModal] = useState(false)
   const [showCancelModal, setShowCancelModal] = useState(false)
   const [cancelReason, setCancelReason] = useState("")
+  const [processing, setProcessing] = useState(false)
+
+  const refreshData = () => {
+    // Placeholder for refresh data logic
+  }
 
   if (isLoading) {
     return (
@@ -79,14 +84,12 @@ export default function AdminPagamentosPage() {
   }
 
   const handlePay = async () => {
-    if (!selectedWithdrawal || !proofFile) return
+    if (!selectedWithdrawal) return
 
     setProcessing(true)
     try {
-      const proofUrl = URL.createObjectURL(proofFile)
-      await payWithdrawal(selectedWithdrawal.id, proofUrl)
+      await payWithdrawal(selectedWithdrawal.id)
       setSelectedWithdrawal(null)
-      setProofFile(null)
     } catch (error) {
       console.error("Erro ao processar pagamento:", error)
     } finally {
@@ -262,7 +265,10 @@ export default function AdminPagamentosPage() {
 
                   <div className="flex gap-2">
                     <button
-                      onClick={() => setSelectedWithdrawal(withdrawal)}
+                      onClick={() => {
+                        setSelectedWithdrawal(withdrawal)
+                        setShowUploadModal(true)
+                      }}
                       className="flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700"
                     >
                       <Upload className="h-4 w-4" />
@@ -510,48 +516,12 @@ export default function AdminPagamentosPage() {
                   </div>
                 )}
 
-                <div className="mb-4">
-                  <label className="mb-2 block text-sm text-muted-foreground">Comprovante de Pagamento *</label>
-                  <div className="rounded-xl border-2 border-dashed border-white/10 p-4 text-center transition-colors hover:border-emerald-500/50">
-                    <input
-                      type="file"
-                      accept=".pdf,.png,.jpg,.jpeg"
-                      onChange={(e) => setProofFile(e.target.files?.[0] || null)}
-                      className="hidden"
-                      id="proof-upload"
-                    />
-                    <label htmlFor="proof-upload" className="cursor-pointer">
-                      {proofFile ? (
-                        <div className="flex items-center justify-center gap-2">
-                          <Upload className="h-5 w-5 text-emerald-500" />
-                          <span className="text-sm text-emerald-500">{proofFile.name}</span>
-                        </div>
-                      ) : (
-                        <div>
-                          <Upload className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
-                          <p className="text-sm text-muted-foreground">Clique para anexar o comprovante</p>
-                        </div>
-                      )}
-                    </label>
-                  </div>
-                </div>
-
                 <button
                   onClick={handlePay}
-                  disabled={!proofFile || processing}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-emerald-700"
                 >
-                  {processing ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Processando...
-                    </>
-                  ) : (
-                    <>
-                      <Wallet className="h-4 w-4" />
-                      Confirmar Pagamento
-                    </>
-                  )}
+                  <Wallet className="h-4 w-4" />
+                  Confirmar Pagamento
                 </button>
               </motion.div>
             </div>
@@ -612,26 +582,24 @@ export default function AdminPagamentosPage() {
 
                 <button
                   onClick={handleCancel}
-                  disabled={!cancelReason.trim() || processing}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-rose-700"
                 >
-                  {processing ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Cancelando...
-                    </>
-                  ) : (
-                    <>
-                      <X className="h-4 w-4" />
-                      Confirmar Cancelamento
-                    </>
-                  )}
+                  <X className="h-4 w-4" />
+                  Confirmar Cancelamento
                 </button>
               </motion.div>
             </div>
           </>
         )}
       </AnimatePresence>
+
+      {/* Upload Payment Modal */}
+      <UploadPaymentModal
+        open={showUploadModal}
+        onOpenChange={setShowUploadModal}
+        withdrawal={selectedWithdrawal}
+        onSuccess={refreshData}
+      />
     </div>
   )
 }
