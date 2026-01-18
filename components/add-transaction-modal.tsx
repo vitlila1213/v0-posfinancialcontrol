@@ -6,7 +6,7 @@ import { useState, useCallback, useMemo, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { X, CreditCard, Check, ArrowRight, FileUp, AlertCircle, Loader2 } from "lucide-react"
 import { toast } from "react-toastify"
-import { resizeImage } from "@/lib/image-utils"
+
 import {
   PLAN_RATES,
   PLAN_NAMES,
@@ -45,12 +45,12 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
   const [error, setError] = useState<string | null>(null)
   const [isRecording, setIsRecording] = useState(false)
   const [noReceiptReason, setNoReceiptReason] = useState("")
-  const [isProcessingImage, setIsProcessingImage] = useState(false)
-  const [isDragging, setIsDragging] = useState(false) // Added dragging state
+  const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = React.createRef<HTMLInputElement>()
   const [customRates, setCustomRates] = useState<CustomPlanRate[]>([])
   const [isLoadingRates, setIsLoadingRates] = useState(false)
   const [success, setSuccess] = useState(false)
+  const [isProcessingImage, setIsProcessingImage] = useState(false) // Declare the variable here
 
   useEffect(() => {
     if (open) {
@@ -96,51 +96,19 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
     const file = acceptedFiles[0]
     if (!file) return
 
-    alert("Imagem detectada!")
     console.log("[v0] File dropped:", file.name, file.size)
 
-    setIsProcessingImage(true)
-
-    try {
-      console.log("[v0] Redimensionando...")
-      const resizedFile = await resizeImage(file)
-      console.log("[v0] Redimensionado:", resizedFile.size)
-
-      setReceiptFile(resizedFile)
-      toast.success("Comprovante adicionado!")
-    } catch (error: any) {
-      console.error("[v0] Erro:", error)
-      alert("Erro ao processar: " + error.message)
-      toast.error(`Erro: ${error.message}`)
-    } finally {
-      setIsProcessingImage(false)
+    // Verificar tamanho do arquivo (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Arquivo muito grande. Máximo 5MB.")
+      return
     }
+
+    setReceiptFile(file)
+    toast.success("Comprovante adicionado!")
   }, [])
 
-  const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
 
-    alert("Imagem detectada!")
-    console.log("[v0] File selected:", file.name, file.size)
-
-    setIsProcessingImage(true)
-
-    try {
-      console.log("[v0] Redimensionando...")
-      const resizedFile = await resizeImage(file)
-      console.log("[v0] Redimensionado:", resizedFile.size)
-
-      setReceiptFile(resizedFile)
-      toast.success("Comprovante adicionado!")
-    } catch (error: any) {
-      console.error("[v0] Erro:", error)
-      alert("Erro ao processar: " + error.message)
-      toast.error(`Erro: ${error.message}`)
-    } finally {
-      setIsProcessingImage(false)
-    }
-  }, [])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop: handleDrop,
@@ -206,7 +174,7 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
         paymentType:
           paymentType === "pix_qrcode" ? "pix_qrcode" : paymentType === "pix_conta" ? "pix_conta" : paymentType,
         installments,
-        receiptUrl: receiptFile ? URL.createObjectURL(receiptFile) : undefined,
+        receiptFile: receiptFile || undefined,
         noReceiptReason: !receiptFile && noReceiptReason ? noReceiptReason : undefined,
       })
 
@@ -231,6 +199,7 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
     setError(null)
     setNoReceiptReason("")
     setCustomRates([])
+    setIsProcessingImage(false) // Reset the variable here
   }
 
   const handleClose = () => {
@@ -663,16 +632,10 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
                           "mt-2 flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-6 transition-all sm:p-8",
                           isDragActive ? "border-emerald-500 bg-emerald-500/10" : "border-white/10 bg-white/5",
                           "cursor-pointer hover:border-emerald-500/50 hover:bg-emerald-500/5",
-                          isProcessingImage && "opacity-50 pointer-events-none",
                         )}
                       >
-                        <input {...getInputProps({ accept: "image/*,application/pdf,.heic" })} />
-                        {isProcessingImage ? (
-                          <div className="text-center">
-                            <Loader2 className="mb-2 h-8 w-8 animate-spin text-emerald-500" />
-                            <p className="text-sm text-emerald-500">Processando imagem...</p>
-                          </div>
-                        ) : receiptFile ? (
+                        <input {...getInputProps({ accept: "image/*,application/pdf" })} />
+                        {receiptFile ? (
                           <div className="text-center">
                             <p className="text-sm font-medium text-emerald-500">{receiptFile.name}</p>
                             <p className="text-xs text-muted-foreground">{(receiptFile.size / 1024).toFixed(2)} KB</p>
@@ -682,8 +645,7 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
                             <p className="text-sm text-muted-foreground">
                               Arraste um arquivo ou clique para selecionar
                             </p>
-                            <p className="text-sm text-muted-foreground">PDF, PNG, JPG ou HEIC (máx. 10MB)</p>
-                            <p className="text-xs text-violet-400 mt-1">✨ Compressão automática para iPhone</p>
+                            <p className="text-sm text-muted-foreground">PDF, PNG, JPG (máx. 5MB)</p>
                           </div>
                         )}
                       </div>

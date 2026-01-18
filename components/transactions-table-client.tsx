@@ -1,5 +1,9 @@
 "use client"
 
+import { Button } from "@/components/ui/button"
+import { Download } from "lucide-react" // Import Download component
+
+import React from "react"
 import { useState } from "react"
 import { Eye, Upload, FileText, ChevronDown, ChevronUp, AlertCircle } from "lucide-react"
 import { formatCurrency } from "@/lib/pos-rates"
@@ -214,6 +218,33 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
               </div>
 
               <div className="flex items-center gap-3">
+                {tx.receipt_url && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-xs text-emerald-500 hover:text-emerald-400"
+                    onClick={async (e) => {
+                      e.stopPropagation()
+                      try {
+                        const response = await fetch(tx.receipt_url!)
+                        const blob = await response.blob()
+                        const url = window.URL.createObjectURL(blob)
+                        const a = document.createElement('a')
+                        a.href = url
+                        a.download = `comprovante-${tx.id}.pdf`
+                        document.body.appendChild(a)
+                        a.click()
+                        window.URL.revokeObjectURL(url)
+                        document.body.removeChild(a)
+                      } catch (error) {
+                        window.open(tx.receipt_url!, '_blank')
+                      }
+                    }}
+                  >
+                    <Download className="mr-1 h-3 w-3" />
+                    Baixar Comprovante
+                  </Button>
+                )}
                 <span className={`rounded-full px-2 py-1 text-xs font-medium ${status.color}`}>{status.label}</span>
                 {isExpanded ? (
                   <ChevronUp className="h-5 w-5 text-muted-foreground" />

@@ -248,7 +248,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     brand: string
     paymentType: string
     installments: number
-    receiptUrl?: string
+    receiptFile?: File
     noReceiptReason?: string
   }) => {
     if (!user || !profile) return
@@ -267,7 +267,37 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       profile.plan,
     )
 
-    const status = data.receiptUrl ? "pending_verification" : "pending_receipt"
+    let receiptUrl: string | null = null
+
+    // Fazer upload do comprovante para o Supabase Storage
+    if (data.receiptFile) {
+      console.log("[v0] 📤 Uploading receipt to Supabase Storage...")
+      const fileName = `${user.id}/${Date.now()}-${data.receiptFile.name}`
+      
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from("transaction-receipts")
+        .upload(fileName, data.receiptFile, {
+          upsert: true,
+          contentType: data.receiptFile.type
+        })
+
+      if (uploadError) {
+        console.error("[v0] ❌ Upload error:", uploadError)
+        throw new Error(`Erro ao fazer upload do comprovante: ${uploadError.message}`)
+      }
+
+      console.log("[v0] ✅ Receipt uploaded successfully:", uploadData.path)
+      
+      // Obter URL pública
+      const { data: publicUrlData } = supabase.storage
+        .from("transaction-receipts")
+        .getPublicUrl(uploadData.path)
+
+      receiptUrl = publicUrlData.publicUrl
+      console.log("[v0] 🔗 Public URL:", receiptUrl)
+    }
+
+    const status = receiptUrl ? "pending_verification" : "pending_receipt"
 
     const { error } = await supabase.from("transactions").insert({
       user_id: user.id,
@@ -278,7 +308,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       fee_percentage: calculation.feePercentage,
       fee_value: calculation.feeAmount,
       net_value: calculation.netAmount,
-      receipt_url: data.receiptUrl || null,
+      receipt_url: receiptUrl,
       no_receipt_reason: data.noReceiptReason || null,
       status,
       is_chargeback: false,
