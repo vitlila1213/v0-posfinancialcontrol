@@ -113,7 +113,8 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop: handleDrop,
     accept: {
-      "image/*": [".png", ".jpg", ".jpeg", ".heic", ".heif"],
+      "image/*": [".png", ".jpg", ".jpeg"],
+      "application/pdf": [".pdf"],
     },
     maxFiles: 1,
     onDragEnter: () => setIsDragging(true),

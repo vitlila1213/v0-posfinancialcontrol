@@ -20,6 +20,8 @@ export default function AdminComprovantesPage() {
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null)
   const [rejectReason, setRejectReason] = useState("")
   const [showRejectModal, setShowRejectModal] = useState(false)
+  const [approvingId, setApprovingId] = useState<string | null>(null)
+  const [rejectingId, setRejectingId] = useState<string | null>(null)
 
   const handleVoiceCommand = (command: AdminVoiceCommand) => {
     console.log("[v0] Comprovantes comando recebido:", command)
@@ -80,15 +82,26 @@ export default function AdminComprovantesPage() {
   }
 
   const handleApprove = async (transactionId: string) => {
-    await verifyTransaction(transactionId, true)
+    setApprovingId(transactionId)
+    try {
+      await verifyTransaction(transactionId, true)
+      setSelectedTransaction(null)
+    } finally {
+      setApprovingId(null)
+    }
   }
 
   const handleReject = async () => {
     if (selectedTransaction) {
-      await verifyTransaction(selectedTransaction.id, false, rejectReason)
-      setShowRejectModal(false)
-      setSelectedTransaction(null)
-      setRejectReason("")
+      setRejectingId(selectedTransaction.id)
+      try {
+        await verifyTransaction(selectedTransaction.id, false, rejectReason)
+        setShowRejectModal(false)
+        setSelectedTransaction(null)
+        setRejectReason("")
+      } finally {
+        setRejectingId(null)
+      }
     }
   }
 
@@ -348,14 +361,16 @@ export default function AdminComprovantesPage() {
                 <div className="flex gap-3">
                   <button
                     onClick={() => handleApprove(selectedTransaction.id)}
-                    className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-emerald-700"
+                    disabled={approvingId === selectedTransaction.id}
+                    className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Check className="h-4 w-4" />
-                    Aprovar
+                    {approvingId === selectedTransaction.id ? "Aprovado" : "Aprovar"}
                   </button>
                   <button
                     onClick={() => setShowRejectModal(true)}
-                    className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-rose-700"
+                    disabled={approvingId === selectedTransaction.id}
+                    className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <X className="h-4 w-4" />
                     Rejeitar
@@ -406,15 +421,17 @@ export default function AdminComprovantesPage() {
                       setShowRejectModal(false)
                       setSelectedTransaction(null)
                     }}
-                    className="flex-1 rounded-xl bg-white/5 px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
+                    disabled={rejectingId === selectedTransaction.id}
+                    className="flex-1 rounded-xl bg-white/5 px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Cancelar
                   </button>
                   <button
                     onClick={handleReject}
-                    className="flex-1 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-rose-700"
+                    disabled={rejectingId === selectedTransaction.id}
+                    className="flex-1 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Confirmar Rejeição
+                    {rejectingId === selectedTransaction.id ? "Rejeitado" : "Confirmar Rejeição"}
                   </button>
                 </div>
               </motion.div>

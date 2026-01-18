@@ -90,22 +90,27 @@ export default function ClientSignupPage() {
 
       if (signUpData.user) {
         console.log("[v0] ✅ Usuário criado com sucesso, ID:", signUpData.user.id)
-        console.log("[v0] 📝 Marcando código como usado:", accessCode.trim().toUpperCase())
+        console.log("[v0] 📝 Marcando código como usado via API:", accessCode.trim().toUpperCase())
 
-        const { data: updateData, error: updateError } = await supabase
-          .from("access_codes")
-          .update({
-            is_used: true,
-            used_by: signUpData.user.id,
-            used_at: new Date().toISOString(),
+        try {
+          const response = await fetch("/api/mark-code-used", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              code: accessCode.trim().toUpperCase(),
+              userId: signUpData.user.id,
+            }),
           })
-          .eq("code", accessCode.trim().toUpperCase())
-          .select() // Added select to get updated data
 
-        if (updateError) {
-          console.error("[v0] ❌ Erro ao marcar código como usado:", updateError)
-        } else {
-          console.log("[v0] ✅ Código marcado como usado com sucesso:", updateData)
+          const result = await response.json()
+
+          if (!response.ok) {
+            console.error("[v0] ❌ Erro ao marcar código como usado:", result.error)
+          } else {
+            console.log("[v0] ✅ Código marcado como usado com sucesso:", result.data)
+          }
+        } catch (apiError) {
+          console.error("[v0] ❌ Erro ao chamar API:", apiError)
         }
       }
 
