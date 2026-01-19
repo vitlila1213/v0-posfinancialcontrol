@@ -46,11 +46,11 @@ export function ChargebackModal({ transaction, onClose }: ChargebackModalProps) 
 
     try {
       await registerChargeback(transaction.id, reason)
-      toast.success("Estorno registrado com sucesso")
+      toast.success("Solicitação de estorno enviada para aprovação")
       onClose()
     } catch (error) {
-      console.error("Erro ao registrar estorno:", error)
-      toast.error("Erro ao registrar estorno")
+      console.error("Erro ao solicitar estorno:", error)
+      toast.error("Erro ao solicitar estorno")
     } finally {
       setIsSubmitting(false)
     }
@@ -84,13 +84,13 @@ export function ChargebackModal({ transaction, onClose }: ChargebackModalProps) 
             </button>
           </div>
 
-          <div className="mb-4 rounded-lg border border-rose-500/30 bg-rose-500/10 p-4">
+          <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
             <div className="flex items-start gap-3">
-              <AlertTriangle className="h-5 w-5 text-rose-500 flex-shrink-0 mt-0.5" />
+              <AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-semibold text-rose-500">Atenção</p>
+                <p className="text-sm font-semibold text-amber-500">Solicitação de Estorno</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  O valor de {formatCurrency(transaction.net_value)} será removido do seu saldo disponível.
+                  Sua solicitação será enviada para análise do administrador. O valor de {formatCurrency(transaction.net_value)} será removido apenas após aprovação.
                 </p>
               </div>
             </div>
@@ -138,8 +138,8 @@ export function ChargebackModal({ transaction, onClose }: ChargebackModalProps) 
               <Button type="button" variant="outline" onClick={onClose} className="flex-1 border-white/10 bg-white/5">
                 Cancelar
               </Button>
-              <Button type="submit" disabled={isSubmitting} className="flex-1 bg-rose-500 text-white hover:bg-rose-600">
-                {isSubmitting ? "Registrando..." : "Confirmar Estorno"}
+              <Button type="submit" disabled={isSubmitting} className="flex-1 bg-amber-500 text-white hover:bg-amber-600">
+                {isSubmitting ? "Enviando..." : "Solicitar Estorno"}
               </Button>
             </div>
           </form>

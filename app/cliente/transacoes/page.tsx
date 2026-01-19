@@ -27,7 +27,7 @@ export default function TransacoesPage() {
     )
   }
 
-  const userTransactions = transactions.filter((t) => t.user_id === user.id && !t.is_chargeback)
+  const userTransactions = transactions.filter((t) => t.user_id === user.id)
 
   const filteredTransactions = userTransactions.filter((t) => {
     if (!search) return true

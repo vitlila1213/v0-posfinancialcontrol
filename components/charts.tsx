@@ -13,11 +13,13 @@ import {
   AreaChart,
 } from "recharts"
 import { formatCurrency } from "@/lib/pos-rates"
+import { formatBrandName } from "@/lib/utils"
 import type { Transaction } from "@/lib/types"
 
 const brandColors: Record<string, string> = {
   visa_master: "#3b82f6",
   elo_amex: "#f97316",
+  pix: "#10b981",
 }
 
 interface ChartProps {
@@ -29,7 +31,7 @@ export function SalesByBrandChart({ transactions }: ChartProps) {
     .filter((t) => t.status !== "rejected")
     .reduce(
       (acc, t) => {
-        const brandName = t.brand === "visa_master" ? "Visa/Master" : "Elo/Amex"
+        const brandName = formatBrandName(t.brand)
         const existing = acc.find((item) => item.brand === brandName)
         if (existing) {
           existing.amount += t.gross_value

@@ -20,7 +20,7 @@ export default async function ClientPanelPage({ params }: { params: Promise<{ id
 
 function ClientPanelContent({ clientId }: { clientId: string }) {
   const router = useRouter()
-  const { clients, transactions, withdrawals, supabase } = useSupabase()
+  const { clients, transactions, withdrawals, chargebacks, supabase } = useSupabase()
   const [client, setClient] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
@@ -28,11 +28,21 @@ function ClientPanelContent({ clientId }: { clientId: string }) {
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [cardFilter, setCardFilter] = useState<string>("all")
 
+  const [clientPayments, setClientPayments] = useState<any[]>([])
+  const [clientReceipts, setClientReceipts] = useState<any[]>([])
+  const [clientChargebacks, setClientChargebacks] = useState<any[]>([])
+
   useEffect(() => {
     const foundClient = clients.find((c) => c.id === clientId)
     setClient(foundClient || null)
     setLoading(false)
-  }, [clients, clientId])
+
+    if (foundClient) {
+      setClientPayments(transactions.filter((p) => p.withdrawal_id !== null))
+      setClientReceipts(withdrawals.filter((r) => r.transaction_id !== null))
+      setClientChargebacks(chargebacks.filter((c) => c.transaction_id !== null))
+    }
+  }, [clients, clientId, transactions, withdrawals, chargebacks])
 
   const handleDeleteClient = async () => {
     if (!confirm(`Tem certeza que deseja excluir o cliente ${client?.full_name}? Esta ação não pode ser desfeita.`)) {
@@ -326,7 +336,11 @@ function ClientPanelContent({ clientId }: { clientId: string }) {
       {/* Withdrawals */}
       <GlassCard className="p-6">
         <h2 className="text-xl font-bold mb-4">Saques ({clientWithdrawals.length})</h2>
-        <WithdrawalsTableClient withdrawals={clientWithdrawals} />
+        {clientWithdrawals.length > 0 ? (
+          <WithdrawalsTableClient withdrawals={clientWithdrawals} />
+        ) : (
+          <p className="text-center text-muted-foreground py-8">Nenhum saque solicitado</p>
+        )}
       </GlassCard>
     </div>
   )

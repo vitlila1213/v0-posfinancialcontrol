@@ -6,6 +6,7 @@ import { useSupabase } from "@/lib/supabase-context"
 import { GlassCard } from "@/components/glass-card"
 import { Input } from "@/components/ui/input"
 import { formatCurrency } from "@/lib/pos-rates"
+import { formatBrandName, formatPaymentType } from "@/lib/utils"
 import { motion, AnimatePresence } from "framer-motion"
 import type { Transaction } from "@/lib/types"
 import { AdminVoiceAssistantButton } from "@/components/admin-voice-assistant-button"
@@ -13,15 +14,17 @@ import type { AdminVoiceCommand } from "@/app/actions/admin-voice-assistant"
 import { toast } from "sonner"
 
 export default function AdminComprovantesPage() {
-  const { transactions, clients, verifyTransaction, isLoading } = useSupabase()
+  const { transactions, clients, verifyTransaction, chargebacks, approveChargeback, isLoading } = useSupabase()
   const [search, setSearch] = useState("")
   const [filterBrand, setFilterBrand] = useState<string>("all")
   const [filterPaymentType, setFilterPaymentType] = useState<string>("all")
+  const [filterChargeback, setFilterChargeback] = useState<string>("all")
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null)
   const [rejectReason, setRejectReason] = useState("")
   const [showRejectModal, setShowRejectModal] = useState(false)
   const [approvingId, setApprovingId] = useState<string | null>(null)
   const [rejectingId, setRejectingId] = useState<string | null>(null)
+  const [approvingChargebackId, setApprovingChargebackId] = useState<string | null>(null)
 
   const handleVoiceCommand = (command: AdminVoiceCommand) => {
     console.log("[v0] Comprovantes comando recebido:", command)
@@ -84,10 +87,26 @@ export default function AdminComprovantesPage() {
   const handleApprove = async (transactionId: string) => {
     setApprovingId(transactionId)
     try {
-      await verifyTransaction(transactionId, true)
-      setSelectedTransaction(null)
+      await verifyTransaction(transactionId, "approved")
+      toast.success("Comprovante aprovado com sucesso")
+    } catch (error) {
+      console.error("Erro ao aprovar comprovante:", error)
+      toast.error("Erro ao aprovar comprovante")
     } finally {
       setApprovingId(null)
+    }
+  }
+
+  const handleApproveChargeback = async (chargebackId: string) => {
+    setApprovingChargebackId(chargebackId)
+    try {
+      await approveChargeback(chargebackId)
+      toast.success("Estorno aprovado - valor não será creditado ao cliente")
+    } catch (error) {
+      console.error("Erro ao aprovar estorno:", error)
+      toast.error("Erro ao aprovar estorno")
+    } finally {
+      setApprovingChargebackId(null)
     }
   }
 
@@ -112,7 +131,14 @@ export default function AdminComprovantesPage() {
 
     const matchesPaymentType = filterPaymentType === "all" || t.payment_type === filterPaymentType
 
-    return matchesSearch && matchesBrand && matchesPaymentType
+    // Verificar se a transação tem chargeback pendente
+    const hasChargeback = chargebacks.some((cb) => cb.transaction_id === t.id && cb.status === "pending")
+    const matchesChargeback =
+      filterChargeback === "all" ||
+      (filterChargeback === "chargeback" && hasChargeback) ||
+      (filterChargeback === "normal" && !hasChargeback)
+
+    return matchesSearch && matchesBrand && matchesPaymentType && matchesChargeback
   })
 
   return (
@@ -171,6 +197,14 @@ export default function AdminComprovantesPage() {
             >
               Elo/Amex
             </button>
+            <button
+              onClick={() => setFilterBrand("pix")}
+              className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                filterBrand === "pix" ? "bg-amber-500 text-white" : "bg-white/5 text-muted-foreground hover:bg-white/10"
+              }`}
+            >
+              PIX
+            </button>
           </div>
           <div className="flex gap-2">
             <button
@@ -214,6 +248,38 @@ export default function AdminComprovantesPage() {
               PIX
             </button>
           </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setFilterChargeback("all")}
+              className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                filterChargeback === "all"
+                  ? "bg-rose-500 text-white"
+                  : "bg-white/5 text-muted-foreground hover:bg-white/10"
+              }`}
+            >
+              Todos Status
+            </button>
+            <button
+              onClick={() => setFilterChargeback("normal")}
+              className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                filterChargeback === "normal"
+                  ? "bg-rose-500 text-white"
+                  : "bg-white/5 text-muted-foreground hover:bg-white/10"
+              }`}
+            >
+              Normal
+            </button>
+            <button
+              onClick={() => setFilterChargeback("chargeback")}
+              className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                filterChargeback === "chargeback"
+                  ? "bg-rose-500 text-white"
+                  : "bg-white/5 text-muted-foreground hover:bg-white/10"
+              }`}
+            >
+              Com Estorno Pendente
+            </button>
+          </div>
         </div>
 
         {filteredReceipts.length === 0 ? (
@@ -235,9 +301,13 @@ export default function AdminComprovantesPage() {
                   <div>
                     <p className="font-medium text-foreground">{getClientName(tx.user_id)}</p>
                     <p className="text-xs text-muted-foreground">
-                      {tx.brand === "visa_master" ? "Visa/Master" : "Elo/Amex"} -{" "}
-                      {tx.payment_type === "debit" ? "Débito" : `Crédito ${tx.installments}x`}
+                      {formatBrandName(tx.brand)} - {formatPaymentType(tx.payment_type, tx.installments)}
                     </p>
+                    {chargebacks.some((cb) => cb.transaction_id === tx.id && cb.status === "pending") && (
+                      <span className="mt-1 inline-block rounded-full bg-rose-500/20 px-2 py-0.5 text-xs text-rose-500">
+                        ⚠️ Estorno Solicitado
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -254,13 +324,35 @@ export default function AdminComprovantesPage() {
                     <Eye className="h-4 w-4" />
                     Ver
                   </button>
-                  <button
-                    onClick={() => handleApprove(tx.id)}
-                    className="flex items-center gap-1 rounded-lg bg-emerald-500/20 px-3 py-2 text-sm text-emerald-500 transition-colors hover:bg-emerald-500/30"
-                  >
-                    <Check className="h-4 w-4" />
-                    Aprovar
-                  </button>
+                  {(() => {
+                    const pendingChargeback = chargebacks.find(
+                      (cb) => cb.transaction_id === tx.id && cb.status === "pending"
+                    )
+                    
+                    if (pendingChargeback) {
+                      return (
+                        <button
+                          onClick={() => handleApproveChargeback(pendingChargeback.id)}
+                          disabled={approvingChargebackId === pendingChargeback.id}
+                          className="flex items-center gap-1 rounded-lg bg-amber-500/20 px-3 py-2 text-sm text-amber-500 transition-colors hover:bg-amber-500/30 disabled:opacity-50"
+                        >
+                          <Check className="h-4 w-4" />
+                          {approvingChargebackId === pendingChargeback.id ? "Aprovando..." : "Aprovar Estorno"}
+                        </button>
+                      )
+                    }
+                    
+                    return (
+                      <button
+                        onClick={() => handleApprove(tx.id)}
+                        disabled={approvingId === tx.id}
+                        className="flex items-center gap-1 rounded-lg bg-emerald-500/20 px-3 py-2 text-sm text-emerald-500 transition-colors hover:bg-emerald-500/30 disabled:opacity-50"
+                      >
+                        <Check className="h-4 w-4" />
+                        {approvingId === tx.id ? "Aprovando..." : "Aprovar"}
+                      </button>
+                    )
+                  })()}
                   <button
                     onClick={() => {
                       setSelectedTransaction(tx)

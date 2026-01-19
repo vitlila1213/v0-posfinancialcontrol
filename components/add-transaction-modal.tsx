@@ -697,14 +697,16 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
                             </span>
                           </div>
                           <div className="mt-2 text-xs text-muted-foreground">
-                            {brand === "VISA_MASTER" ? "Visa/Master" : brand === "ELO_AMEX" ? "Elo/Amex" : "PIX"} •{" "}
+                            {brand === "VISA_MASTER" ? "Visa/Master" : brand === "ELO_AMEX" ? "Elo/Amex" : brand === "PIX" ? "PIX" : brand} •{" "}
                             {paymentType === "debit"
                               ? "Débito"
                               : paymentType === "credit"
                                 ? `Crédito ${installments}x`
                                 : paymentType === "pix_conta"
                                   ? "PIX Conta"
-                                  : "PIX QR Code"}
+                                  : paymentType === "pix_qrcode"
+                                    ? "PIX QR Code"
+                                    : paymentType}
                           </div>
                         </div>
                       </div>

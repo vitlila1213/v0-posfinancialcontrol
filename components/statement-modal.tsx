@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import { X, Download, Calendar, FileText } from "lucide-react"
 import { useSupabase } from "@/lib/supabase-context"
 import { formatCurrency } from "@/lib/pos-rates"
+import { formatBrandName, formatPaymentType } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
@@ -121,8 +122,8 @@ export function StatementModal({ open, onOpenChange }: StatementModalProps) {
       // Table
       const tableData = userTransactions.map((tx) => [
         new Date(tx.created_at).toLocaleDateString("pt-BR"),
-        tx.brand === "visa_master" ? "Visa/Master" : "Elo/Amex",
-        tx.payment_type === "debit" ? "Débito" : `Crédito ${tx.installments}x`,
+        formatBrandName(tx.brand),
+        formatPaymentType(tx.payment_type, tx.installments),
         formatCurrency(tx.gross_value),
         `${tx.fee_percentage.toFixed(2)}%`,
         formatCurrency(tx.fee_value),
@@ -355,8 +356,7 @@ export function StatementModal({ open, onOpenChange }: StatementModalProps) {
                   <div>
                     <p className="text-sm font-medium text-foreground">{formatCurrency(tx.gross_value)}</p>
                     <p className="text-xs text-muted-foreground">
-                      {new Date(tx.created_at).toLocaleDateString("pt-BR")} -{" "}
-                      {tx.brand === "visa_master" ? "Visa/Master" : "Elo/Amex"}
+                {new Date(tx.created_at).toLocaleDateString("pt-BR")} - {formatBrandName(tx.brand)}
                     </p>
                   </div>
                   <div className="text-right">

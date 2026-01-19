@@ -294,7 +294,7 @@ export function RequestWithdrawalModal({ open, onOpenChange, availableBalance }:
                               handleSelectSavedKey(e.target.value)
                             }
                           }}
-                          className="mt-1.5 w-full rounded-lg border border-white/10 bg-slate-800 p-2.5 text-sm text-foreground [&>option]:bg-slate-800 [&>option]:text-foreground"
+                          className="mt-1.5 w-full rounded-lg border border-white/10 bg-slate-800 p-2.5 text-sm text-foreground"
                         >
                           <option value="">Selecione uma chave</option>
                           {savedPixKeys.map((key) => (

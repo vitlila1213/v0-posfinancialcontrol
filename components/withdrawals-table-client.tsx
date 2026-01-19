@@ -13,6 +13,7 @@ const statusConfig: Record<string, { label: string; color: string; icon: typeof 
 interface WithdrawalsTableClientProps {
   methodFilter?: string
   statusFilter?: string
+  withdrawals?: any[]
 }
 
 const handleDownloadProof = (proofUrl: string) => {
@@ -21,11 +22,13 @@ const handleDownloadProof = (proofUrl: string) => {
   toast.success("Abrindo comprovante...")
 }
 
-export function WithdrawalsTableClient({ methodFilter = "all", statusFilter = "all" }: WithdrawalsTableClientProps) {
-  const { user, withdrawals } = useSupabase()
+export function WithdrawalsTableClient({ methodFilter = "all", statusFilter = "all", withdrawals: propWithdrawals }: WithdrawalsTableClientProps) {
+  const { user, withdrawals: contextWithdrawals } = useSupabase()
 
-  const userWithdrawals = withdrawals
-    .filter((w) => w.user_id === user?.id)
+  const allWithdrawals = propWithdrawals || contextWithdrawals
+  
+  const userWithdrawals = allWithdrawals
+    .filter((w) => !propWithdrawals ? w.user_id === user?.id : true)
     .filter((w) => methodFilter === "all" || w.method === methodFilter)
     .filter((w) => statusFilter === "all" || w.status === statusFilter)
 

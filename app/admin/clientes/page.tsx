@@ -27,9 +27,9 @@ import { Input } from "@/components/ui/input"
 import { AnimatedNumber } from "@/components/animated-number"
 import { formatCurrency, PLAN_NAMES, type PlanType } from "@/lib/pos-rates"
 import { motion, AnimatePresence } from "framer-motion"
-import type { Profile, Transaction, CustomPlan } from "@/lib/types" // Added CustomPlan type
+import type { Profile, Transaction, CustomPlan } from "@/lib/types"
 import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
+import { cn, formatBrandName, formatPaymentType } from "@/lib/utils"
 import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { format } from "date-fns"
@@ -134,7 +134,8 @@ export default function AdminClientesPage() {
     const pendingTransactions = transactions.filter(
       (t) => t.user_id === clientId && t.status === "pending_verification",
     )
-    return pendingTransactions.reduce((sum, t) => sum + t.net_value, 0)
+    const total = pendingTransactions.reduce((sum, t) => sum + t.net_value, 0)
+    return Number(total.toFixed(2))
   }
 
   const getFilteredTransactions = (userId: string): Transaction[] => {
@@ -202,16 +203,8 @@ export default function AdminClientesPage() {
       `R$ ${tx.gross_value.toFixed(2)}`,
       `R$ ${tx.net_value.toFixed(2)}`,
       `R$ ${tx.fee_value.toFixed(2)}`,
-      tx.brand === "visa_master" ? "Visa/Master" : tx.brand === "elo_amex" ? "Elo/Amex" : "PIX",
-      tx.payment_type === "debit"
-        ? "Débito"
-        : tx.payment_type === "credit"
-          ? "Crédito"
-          : tx.payment_type === "pix_account"
-            ? "PIX Conta"
-            : tx.payment_type === "pix_qrcode"
-              ? "PIX QR"
-              : tx.payment_type,
+      formatBrandName(tx.brand),
+      formatPaymentType(tx.payment_type, tx.installments),
       tx.installments?.toString() || "1",
       tx.status === "verified"
         ? "Verificado"
@@ -1064,19 +1057,7 @@ export default function AdminClientesPage() {
                                     </p>
                                   </div>
                                   <p className="text-xs text-muted-foreground">
-                                    {tx.brand === "visa_master"
-                                      ? "Visa/Master"
-                                      : tx.brand === "elo_amex"
-                                        ? "Elo/Amex"
-                                        : "PIX"}{" "}
-                                    -{" "}
-                                    {tx.payment_type === "debit"
-                                      ? "Débito"
-                                      : tx.payment_type === "credit"
-                                        ? `Crédito ${tx.installments}x`
-                                        : tx.payment_type === "pix_account"
-                                          ? "PIX Conta"
-                                          : "PIX QR Code"}
+                                    {formatBrandName(tx.brand)} - {formatPaymentType(tx.payment_type, tx.installments)}
                                   </p>
                                   <p className="text-xs text-muted-foreground">
                                     {format(new Date(tx.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}

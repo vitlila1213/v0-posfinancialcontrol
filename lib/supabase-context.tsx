@@ -27,6 +27,7 @@ interface SupabaseContextType {
   clients: Profile[]
   balanceAdjustments: BalanceAdjustment[]
   customPlans: Array<{ id: string; name: string; created_at: string }>
+  chargebacks: any[]
   // Transaction actions
   addTransaction: (data: {
     grossValue: number
@@ -71,6 +72,8 @@ interface SupabaseContextType {
   addBalanceAdjustment: (userId: string, type: AdjustmentType, amount: number, reason: string) => Promise<void>
   // Chargeback actions
   registerChargeback: (transactionId: string, reason: string) => Promise<void>
+  approveChargeback: (chargebackId: string) => Promise<void>
+  rejectChargeback: (chargebackId: string) => Promise<void>
   // Transaction approval actions
   approveWithoutReceipt: (transactionId: string) => Promise<void>
   createCustomPlan: (data: {
@@ -114,7 +117,8 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [clients, setClients] = useState<Profile[]>([])
   const [balanceAdjustments, setBalanceAdjustments] = useState<BalanceAdjustment[]>([])
-  const [customPlans, setCustomPlans] = useState<Array<{ id: string; name: string; created_at: string }>>([])
+  const [customPlans, setCustomPlans] = useState<Array<{ id: string; name: string; created_at: string }>>([ ])
+  const [chargebacks, setChargebacks] = useState<any[]>([])
 
   const supabase = createClient()
 
@@ -145,7 +149,6 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         const { data: txData } = await supabase
           .from("transactions")
           .select("*")
-          .eq("is_chargeback", false)
           .order("created_at", { ascending: false })
         setTransactions((txData as Transaction[]) || [])
 
@@ -164,36 +167,50 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
           .order("created_at", { ascending: false })
         setWithdrawals((wdData as Withdrawal[]) || [])
 
-        const { data: adjustmentsData } = await supabase
-          .from("balance_adjustments")
-          .select("*")
-          .order("created_at", { ascending: false })
-        setBalanceAdjustments((adjustmentsData as BalanceAdjustment[]) || [])
-      } else {
+      const { data: adjustmentsData } = await supabase
+        .from("balance_adjustments")
+        .select("*")
+        .order("created_at", { ascending: false })
+      setBalanceAdjustments((adjustmentsData as BalanceAdjustment[]) || [])
+
+      // Admin vê todos os chargebacks
+      const { data: chargebacksData } = await supabase
+        .from("chargebacks")
+        .select("*")
+        .order("created_at", { ascending: false })
+      setChargebacks(chargebacksData || [])
+    } else {
         // Cliente vê apenas suas transações
         const { data: txData } = await supabase
           .from("transactions")
           .select("*")
           .eq("user_id", user.id)
-          .eq("is_chargeback", false)
           .order("created_at", { ascending: false })
         setTransactions((txData as Transaction[]) || [])
 
-        // Cliente vê apenas seus saques
-        const { data: wdData } = await supabase
-          .from("withdrawals")
-          .select("*")
-          .eq("user_id", user.id)
-          .order("created_at", { ascending: false })
-        setWithdrawals((wdData as Withdrawal[]) || [])
+      // Cliente vê apenas seus saques
+      const { data: wdData } = await supabase
+        .from("withdrawals")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+      setWithdrawals((wdData as Withdrawal[]) || [])
 
-        const { data: adjustmentsData } = await supabase
-          .from("balance_adjustments")
-          .select("*")
-          .eq("user_id", user.id)
-          .order("created_at", { ascending: false })
-        setBalanceAdjustments((adjustmentsData as BalanceAdjustment[]) || [])
-      }
+      const { data: adjustmentsData } = await supabase
+        .from("balance_adjustments")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+      setBalanceAdjustments((adjustmentsData as BalanceAdjustment[]) || [])
+
+      // Cliente vê apenas seus chargebacks
+      const { data: chargebacksData } = await supabase
+        .from("chargebacks")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+      setChargebacks(chargebacksData || [])
+    }
 
       // Buscar notificações
       const { data: notifData } = await supabase
@@ -258,11 +275,22 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       throw new Error("Você ainda não possui um plano atribuído. Aguarde o gestor configurar seu plano.")
     }
 
-    const brandGroup = data.brand === "visa_master" ? "VISA_MASTER" : "ELO_AMEX"
+    // Determinar brandGroup e paymentType corretos
+    let brandGroup: BrandGroup
+    let feePaymentType: "debit" | "credit" | "pix_qrcode" | "pix_conta"
+    
+    if (data.brand === "pix") {
+      brandGroup = "PIX" as BrandGroup
+      feePaymentType = data.paymentType as "pix_qrcode" | "pix_conta"
+    } else {
+      brandGroup = data.brand === "visa_master" ? "VISA_MASTER" : "ELO_AMEX"
+      feePaymentType = data.paymentType as "debit" | "credit"
+    }
+    
     const calculation = calculateFee(
       data.grossValue,
-      brandGroup as BrandGroup,
-      data.paymentType as "debit" | "credit",
+      brandGroup,
+      feePaymentType as any,
       data.installments as Installments,
       profile.plan,
     )
@@ -298,6 +326,8 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     }
 
     const status = receiptUrl ? "pending_verification" : "pending_receipt"
+
+    console.log("[v0] 🔍 About to insert transaction with brand:", data.brand, "payment_type:", data.paymentType)
 
     const { error } = await supabase.from("transactions").insert({
       user_id: user.id,
@@ -632,8 +662,13 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
 
     const withdrawn = clientWithdrawals.filter((w) => w.status === "paid").reduce((sum, w) => sum + w.amount, 0)
 
+    // Verificar quais transações têm chargeback aprovado
+    const approvedChargebackTxIds = chargebacks
+      .filter((cb) => cb.status === "approved")
+      .map((cb) => cb.transaction_id)
+
     const total = clientTransactions
-      .filter((t) => t.status !== "rejected" && !t.is_chargeback)
+      .filter((t) => t.status !== "rejected" && !t.is_chargeback && !approvedChargebackTxIds.includes(t.id))
       .reduce((sum, t) => sum + t.gross_value, 0)
 
     console.log("[v0] Balance from database for user:", userId, {
@@ -645,10 +680,10 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     })
 
     return {
-      available: Math.max(0, available),
-      pending: Math.max(0, pending),
-      withdrawn,
-      total,
+      available: Number(Math.max(0, available).toFixed(2)),
+      pending: Number(Math.max(0, pending).toFixed(2)),
+      withdrawn: Number(withdrawn.toFixed(2)),
+      total: Number(total.toFixed(2)),
     }
   }
 
@@ -871,19 +906,99 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   }
 
   const registerChargeback = async (transactionId: string, reason: string) => {
-    console.log("[v0] Registering chargeback for transaction:", transactionId)
+    console.log("[v0] Registering chargeback request for transaction:", transactionId)
 
-    const { error } = await supabase
+    if (!user) {
+      throw new Error("Usuário não autenticado")
+    }
+
+    // Criar solicitação de estorno na tabela chargebacks
+    const { error } = await supabase.from("chargebacks").insert({
+      transaction_id: transactionId,
+      user_id: user.id,
+      reason: reason,
+      status: "pending",
+    })
+
+    if (error) {
+      console.error("[v0] Error creating chargeback request:", error.message)
+      throw error
+    }
+
+    await refreshData()
+  }
+
+  const approveChargeback = async (chargebackId: string) => {
+    console.log("[v0] Approving chargeback:", chargebackId)
+
+    if (!user) {
+      throw new Error("Usuário não autenticado")
+    }
+
+    // Buscar o chargeback para obter o transaction_id
+    const { data: chargebackData, error: fetchError } = await supabase
+      .from("chargebacks")
+      .select("transaction_id")
+      .eq("id", chargebackId)
+      .single()
+
+    if (fetchError || !chargebackData) {
+      console.error("[v0] Error fetching chargeback:", fetchError?.message)
+      throw fetchError || new Error("Chargeback não encontrado")
+    }
+
+    // Atualizar status do chargeback
+    const { error: chargebackError } = await supabase
+      .from("chargebacks")
+      .update({
+        status: "approved",
+        reviewed_by: user.id,
+        reviewed_at: new Date().toISOString(),
+      })
+      .eq("id", chargebackId)
+
+    if (chargebackError) {
+      console.error("[v0] Error approving chargeback:", chargebackError.message)
+      throw chargebackError
+    }
+
+    // Marcar a transação como estornada
+    const { error: txError } = await supabase
       .from("transactions")
       .update({
         is_chargeback: true,
-        chargeback_reason: reason,
+        chargeback_reason: "Aprovado pelo admin",
         chargeback_at: new Date().toISOString(),
       })
-      .eq("id", transactionId)
+      .eq("id", chargebackData.transaction_id)
+
+    if (txError) {
+      console.error("[v0] Error updating transaction:", txError.message)
+      throw txError
+    }
+
+    await refreshData()
+  }
+
+  const rejectChargeback = async (chargebackId: string) => {
+    console.log("[v0] Rejecting chargeback:", chargebackId)
+
+    if (!user) {
+      throw new Error("Usuário não autenticado")
+    }
+
+    // Atualizar status do chargeback
+    const { error } = await supabase
+      .from("chargebacks")
+      .update({
+        status: "rejected",
+        reviewed_by: user.id,
+        reviewed_at: new Date().toISOString(),
+      })
+      .eq("id", chargebackId)
 
     if (error) {
-      console.error("[v0] Error updating transaction:", error.message)
+      console.error("[v0] Error rejecting chargeback:", error.message)
       throw error
     }
 
@@ -923,6 +1038,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     clients,
     balanceAdjustments,
     customPlans,
+    chargebacks,
     addTransaction,
     updateTransaction,
     uploadReceipt,
@@ -942,6 +1058,8 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     fetchCustomPlans,
     addBalanceAdjustment,
     registerChargeback,
+    approveChargeback,
+    rejectChargeback,
     deleteClient,
     refreshData,
     logout,

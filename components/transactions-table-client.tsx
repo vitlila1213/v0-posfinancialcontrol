@@ -1,12 +1,13 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
-import { Download } from "lucide-react" // Import Download component
+import { Download } from "lucide-react"
 
 import React from "react"
 import { useState } from "react"
 import { Eye, Upload, FileText, ChevronDown, ChevronUp, AlertCircle } from "lucide-react"
 import { formatCurrency } from "@/lib/pos-rates"
+import { formatBrandName, formatPaymentType } from "@/lib/utils"
 import { useSupabase } from "@/lib/supabase-context"
 import type { Transaction } from "@/lib/types"
 import { motion, AnimatePresence } from "framer-motion"
@@ -18,6 +19,9 @@ const statusConfig: Record<string, { label: string; color: string }> = {
   rejected: { label: "Rejeitado", color: "bg-rose-500/20 text-rose-500" },
   paid: { label: "Pago", color: "bg-purple-500/20 text-purple-500" },
   chargeback: { label: "Estornado", color: "bg-red-500/20 text-red-500" },
+  chargeback_pending: { label: "Estorno Pendente", color: "bg-amber-500/20 text-amber-500" },
+  chargeback_approved: { label: "Estorno Aprovado", color: "bg-emerald-500/20 text-emerald-500" },
+  chargeback_rejected: { label: "Estorno Rejeitado", color: "bg-rose-500/20 text-rose-500" },
 }
 
 interface Props {
@@ -26,7 +30,7 @@ interface Props {
 }
 
 export function TransactionsTableClient({ transactions, onChargeback }: Props) {
-  const { uploadReceipt } = useSupabase()
+  const { uploadReceipt, chargebacks } = useSupabase()
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [uploadingId, setUploadingId] = useState<string | null>(null)
   const [debugLogs, setDebugLogs] = useState<string[]>([])
@@ -195,9 +199,23 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
   return (
     <div className="space-y-3">
       {transactions.map((tx) => {
-        const status = statusConfig[tx.status] || statusConfig.pending_receipt
-        const isExpanded = expandedId === tx.id
+        // Verificar se há chargeback para esta transação
+        const chargeback = chargebacks.find((cb) => cb.transaction_id === tx.id)
+        let status = statusConfig[tx.status] || statusConfig.pending_receipt
+        
+        // Se há chargeback, sobrescrever o status
+        if (chargeback) {
+          if (chargeback.status === "pending") {
+            status = statusConfig.chargeback_pending
+          } else if (chargeback.status === "approved") {
+            status = statusConfig.chargeback_approved
+          } else if (chargeback.status === "rejected") {
+            status = statusConfig.chargeback_rejected
+          }
+        }
 
+        const isExpanded = expandedId === tx.id
+  
         return (
           <div key={tx.id} className="overflow-hidden rounded-xl border border-white/5 bg-white/5">
             <div
@@ -211,8 +229,7 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
                 <div>
                   <p className="font-medium text-foreground">{formatCurrency(tx.gross_value)}</p>
                   <p className="text-xs text-muted-foreground">
-                    {tx.brand === "visa_master" ? "Visa/Master" : "Elo/Amex"} -{" "}
-                    {tx.payment_type === "debit" ? "Débito" : `Crédito ${tx.installments}x`}
+                    {formatBrandName(tx.brand)} - {formatPaymentType(tx.payment_type, tx.installments)}
                   </p>
                 </div>
               </div>
@@ -363,7 +380,7 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
                       </div>
                     )}
 
-                    {!tx.is_chargeback && onChargeback && (
+                    {!tx.is_chargeback && !chargeback && onChargeback && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
@@ -374,6 +391,30 @@ export function TransactionsTableClient({ transactions, onChargeback }: Props) {
                         <AlertCircle className="h-4 w-4" />
                         Registrar Estorno
                       </button>
+                    )}
+
+                    {chargeback && (
+                      <div className={`rounded-lg p-3 ${
+                        chargeback.status === 'pending' ? 'bg-amber-500/10' :
+                        chargeback.status === 'approved' ? 'bg-emerald-500/10' :
+                        'bg-rose-500/10'
+                      }`}>
+                        <p className={`text-sm ${
+                          chargeback.status === 'pending' ? 'text-amber-400' :
+                          chargeback.status === 'approved' ? 'text-emerald-400' :
+                          'text-rose-400'
+                        }`}>
+                          <strong>Estorno:</strong> {chargeback.reason}
+                          <br />
+                          <span className="text-xs">
+                            Status: {
+                              chargeback.status === 'pending' ? 'Aguardando análise do admin' :
+                              chargeback.status === 'approved' ? 'Aprovado - valor estornado' :
+                              'Rejeitado pelo admin'
+                            }
+                          </span>
+                        </p>
+                      </div>
                     )}
 
                     {tx.is_chargeback && tx.chargeback_reason && (
