@@ -19,6 +19,7 @@ export default function CodigosPage() {
   const [isGenerating, setIsGenerating] = useState(false)
   const [quantityToGenerate, setQuantityToGenerate] = useState(1)
   const [copiedCode, setCopiedCode] = useState<string | null>(null)
+  const [copiedCodes, setCopiedCodes] = useState<Set<string>>(new Set())
   const supabase = createClient()
 
   useEffect(() => {
@@ -80,8 +81,11 @@ export default function CodigosPage() {
   }
 
   const copyToClipboard = async (code: string) => {
+    if (copiedCodes.has(code)) return // Já foi copiado, não permitir novamente
+    
     await navigator.clipboard.writeText(code)
     setCopiedCode(code)
+    setCopiedCodes(new Set(copiedCodes).add(code))
     setTimeout(() => setCopiedCode(null), 2000)
   }
 
@@ -149,18 +153,14 @@ export default function CodigosPage() {
           </Button>
         </div>
 
-        <div className="mt-4 grid gap-4 sm:grid-cols-3">
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <div className="rounded-lg border border-white/10 bg-secondary/50 p-4">
             <p className="text-sm text-muted-foreground">Total de Códigos</p>
-            <p className="text-2xl font-bold text-foreground">{accessCodes.length}</p>
+            <p className="text-2xl font-bold text-foreground">{unusedCodes.length}</p>
           </div>
           <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-4">
             <p className="text-sm text-emerald-400">Códigos Disponíveis</p>
-            <p className="text-2xl font-bold text-emerald-500">{unusedCodes.length}</p>
-          </div>
-          <div className="rounded-lg border border-blue-500/20 bg-blue-500/10 p-4">
-            <p className="text-sm text-blue-400">Códigos Utilizados</p>
-            <p className="text-2xl font-bold text-blue-500">{usedCodes.length}</p>
+            <p className="text-2xl font-bold text-emerald-500">{unusedCodes.length - copiedCodes.size}</p>
           </div>
         </div>
       </GlassCard>
@@ -176,65 +176,49 @@ export default function CodigosPage() {
           <p className="text-center text-muted-foreground py-8">Nenhum código disponível</p>
         ) : (
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {unusedCodes.map((code) => (
-              <div
-                key={code.id}
-                className="flex items-center justify-between rounded-lg border border-white/10 bg-secondary/50 p-3"
-              >
-                <div className="flex items-center gap-2">
-                  <div className="rounded bg-emerald-500/20 px-2 py-1">
-                    <span className="font-mono text-sm font-bold text-emerald-400">{code.code}</span>
+            {unusedCodes.map((code) => {
+              const isCopied = copiedCodes.has(code.code)
+              return (
+                <div
+                  key={code.id}
+                  className={`flex items-center justify-between rounded-lg border p-3 transition-all ${
+                    isCopied
+                      ? "border-white/5 bg-white/5 opacity-50"
+                      : "border-white/10 bg-secondary/50"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <div className={`rounded px-2 py-1 ${
+                      isCopied ? "bg-white/5" : "bg-emerald-500/20"
+                    }`}>
+                      <span className={`font-mono text-sm font-bold ${
+                        isCopied ? "text-muted-foreground" : "text-emerald-400"
+                      }`}>
+                        {code.code}
+                      </span>
+                    </div>
                   </div>
+                  <Button 
+                    size="sm" 
+                    variant="ghost" 
+                    onClick={() => copyToClipboard(code.code)} 
+                    className="h-8 w-8 p-0"
+                    disabled={isCopied}
+                  >
+                    {copiedCode === code.code ? (
+                      <Check className="h-4 w-4 text-emerald-500" />
+                    ) : (
+                      <Copy className={`h-4 w-4 ${isCopied ? "text-muted-foreground" : ""}`} />
+                    )}
+                  </Button>
                 </div>
-                <Button size="sm" variant="ghost" onClick={() => copyToClipboard(code.code)} className="h-8 w-8 p-0">
-                  {copiedCode === code.code ? (
-                    <Check className="h-4 w-4 text-emerald-500" />
-                  ) : (
-                    <Copy className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </GlassCard>
 
-      {/* Used Codes */}
-      <GlassCard className="p-6">
-        <div className="mb-4 flex items-center gap-2">
-          <Check className="h-5 w-5 text-blue-500" />
-          <h2 className="text-lg font-semibold text-foreground">Códigos Utilizados</h2>
-        </div>
 
-        {usedCodes.length === 0 ? (
-          <p className="text-center text-muted-foreground py-8">Nenhum código utilizado ainda</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-white/10">
-                  <th className="pb-3 text-left text-sm font-medium text-muted-foreground">Código</th>
-                  <th className="pb-3 text-left text-sm font-medium text-muted-foreground">Usado Por</th>
-                  <th className="pb-3 text-left text-sm font-medium text-muted-foreground">Data de Uso</th>
-                </tr>
-              </thead>
-              <tbody>
-                {usedCodes.map((code) => (
-                  <tr key={code.id} className="border-b border-white/5">
-                    <td className="py-3">
-                      <span className="font-mono text-sm font-bold text-blue-400">{code.code}</span>
-                    </td>
-                    <td className="py-3 text-sm text-foreground">{getClientName(code.used_by)}</td>
-                    <td className="py-3 text-sm text-muted-foreground">
-                      {code.used_at ? format(new Date(code.used_at), "dd/MM/yyyy HH:mm", { locale: ptBR }) : "-"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </GlassCard>
     </div>
   )
 }

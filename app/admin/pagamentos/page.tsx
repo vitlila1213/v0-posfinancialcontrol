@@ -381,6 +381,11 @@ export default function AdminPagamentosPage() {
                           {getMethodIcon(withdrawal.withdrawal_method)}
                           <span>{getMethodLabel(withdrawal.withdrawal_method)}</span>
                         </div>
+                        {withdrawal.pix_key && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            PIX ({getPixKeyTypeLabel(withdrawal.pix_key_type)}): {withdrawal.pix_key}
+                          </p>
+                        )}
                       </div>
                     </div>
 
