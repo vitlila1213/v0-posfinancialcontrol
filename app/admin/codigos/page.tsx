@@ -80,13 +80,37 @@ export default function CodigosPage() {
     }
   }
 
-  const copyToClipboard = async (code: string) => {
+  const copyToClipboard = async (code: string, codeId: string) => {
     if (copiedCodes.has(code)) return // Já foi copiado, não permitir novamente
     
-    await navigator.clipboard.writeText(code)
-    setCopiedCode(code)
-    setCopiedCodes(new Set(copiedCodes).add(code))
-    setTimeout(() => setCopiedCode(null), 2000)
+    try {
+      await navigator.clipboard.writeText(code)
+      
+      // Marcar código como usado no banco de dados
+      const { error } = await supabase
+        .from("access_codes")
+        .update({
+          is_used: true,
+          used_by: profile?.id,
+          used_at: new Date().toISOString()
+        })
+        .eq("id", codeId)
+      
+      if (error) {
+        console.error("[v0] Error marking code as used:", error)
+        throw error
+      }
+      
+      setCopiedCode(code)
+      setCopiedCodes(new Set(copiedCodes).add(code))
+      
+      // Recarregar códigos para atualizar a lista
+      await fetchAccessCodes()
+      
+      setTimeout(() => setCopiedCode(null), 2000)
+    } catch (error) {
+      console.error("[v0] Error copying code:", error)
+    }
   }
 
   const getClientName = (userId: string | null) => {
@@ -201,7 +225,7 @@ export default function CodigosPage() {
                   <Button 
                     size="sm" 
                     variant="ghost" 
-                    onClick={() => copyToClipboard(code.code)} 
+                    onClick={() => copyToClipboard(code.code, code.id)} 
                     className="h-8 w-8 p-0"
                     disabled={isCopied}
                   >
