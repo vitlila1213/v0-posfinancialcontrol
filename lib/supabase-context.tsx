@@ -212,7 +212,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       setChargebacks(chargebacksData || [])
     }
 
-      // Buscar notificações
+      // Buscar notificações (admin e cliente)
       const { data: notifData } = await supabase
         .from("notifications")
         .select("*")
@@ -299,7 +299,6 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
 
     // Fazer upload do comprovante para o Supabase Storage
     if (data.receiptFile) {
-      console.log("[v0] 📤 Uploading receipt to Supabase Storage...")
       const fileName = `${user.id}/${Date.now()}-${data.receiptFile.name}`
       
       const { data: uploadData, error: uploadError } = await supabase.storage
@@ -310,11 +309,8 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         })
 
       if (uploadError) {
-        console.error("[v0] ❌ Upload error:", uploadError)
         throw new Error(`Erro ao fazer upload do comprovante: ${uploadError.message}`)
       }
-
-      console.log("[v0] ✅ Receipt uploaded successfully:", uploadData.path)
       
       // Obter URL pública
       const { data: publicUrlData } = supabase.storage
@@ -322,12 +318,9 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         .getPublicUrl(uploadData.path)
 
       receiptUrl = publicUrlData.publicUrl
-      console.log("[v0] 🔗 Public URL:", receiptUrl)
     }
 
     const status = receiptUrl ? "pending_verification" : "pending_receipt"
-
-    console.log("[v0] 🔍 About to insert transaction with brand:", data.brand, "payment_type:", data.paymentType)
 
     const { error } = await supabase.from("transactions").insert({
       user_id: user.id,
@@ -346,33 +339,17 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
 
     if (error) throw error
 
-    console.log("[v0] 📝 Transaction created, fetching admins to notify...")
-    const { data: admins, error: adminsError } = await supabase.from("profiles").select("id").eq("role", "admin")
-
-    if (adminsError) {
-      console.error("[v0] ❌ Error fetching admins:", adminsError)
-    } else {
-      console.log("[v0] 👥 Found admins:", admins?.length || 0)
-    }
+    // Notificar admins
+    const { data: admins } = await supabase.from("profiles").select("id").eq("role", "admin")
 
     if (admins && admins.length > 0) {
       for (const admin of admins) {
-        console.log("[v0] 🔔 Creating notification for admin:", admin.id)
-        const { error: notifError, data: notifData } = await supabase
-          .from("notifications")
-          .insert({
-            user_id: admin.id,
-            type: data.receiptUrl ? "transaction_pending" : "transaction_no_receipt",
-            title: data.receiptUrl ? "Nova Transação Pendente" : "Nova Transação sem Comprovante",
-            message: `${profile?.full_name || "Cliente"} adicionou uma transação de R$ ${data.grossValue.toFixed(2)}${data.receiptUrl ? " com comprovante" : " sem comprovante"}`,
-          })
-          .select()
-
-        if (notifError) {
-          console.error("[v0] ❌ Error creating notification:", notifError)
-        } else {
-          console.log("[v0] ✅ Notification created successfully:", notifData)
-        }
+        await supabase.from("notifications").insert({
+          user_id: admin.id,
+          type: "receipt_uploaded",
+          title: `nova transação de ${profile?.full_name || "Cliente"}`,
+          message: `transação de R$ ${data.grossValue.toFixed(2)}`,
+        })
       }
     }
 

@@ -89,6 +89,7 @@ export default function AdminComprovantesPage() {
     try {
       await verifyTransaction(transactionId, "approved")
       toast.success("Comprovante aprovado com sucesso")
+      setSelectedTransaction(null) // Fechar modal após aprovação
     } catch (error) {
       console.error("Erro ao aprovar comprovante:", error)
       toast.error("Erro ao aprovar comprovante")
