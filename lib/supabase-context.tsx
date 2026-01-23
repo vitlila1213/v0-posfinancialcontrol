@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react"
 import { createClient } from "@/lib/supabase/client"
+import { toast } from "react-toastify"
 import type { User } from "@supabase/supabase-js"
 import type {
   Transaction,
@@ -246,7 +247,65 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       }
     })
 
-    return () => subscription.unsubscribe()
+    // Realtime subscription para novas transações (apenas para admins)
+    const transactionsChannel = supabase
+      .channel('transactions-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'transactions'
+        },
+        async (payload) => {
+          console.log('[v0] Nova transação detectada:', payload.new)
+          
+          // Buscar dados do cliente que criou a transação
+          const { data: clientData } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', payload.new.user_id)
+            .single()
+          
+          // Se o usuário atual é admin, mostrar notificação
+          const { data: { user: currentUser } } = await supabase.auth.getUser()
+          if (currentUser) {
+            const { data: currentProfile } = await supabase
+              .from('profiles')
+              .select('role')
+              .eq('id', currentUser.id)
+              .single()
+            
+            if (currentProfile?.role === 'admin') {
+              const clientName = clientData?.full_name || 'Cliente'
+              const transactionValue = Number(payload.new.gross_value).toFixed(2)
+              
+              // Mostrar toast
+              toast.success(`Nova transação de ${clientName}`, {
+                description: `Transação de R$ ${transactionValue}`,
+                duration: 5000,
+              })
+              
+              // Criar notificação no banco
+              await supabase.from('notifications').insert({
+                user_id: currentUser.id,
+                type: 'receipt_uploaded',
+                title: `nova transação de ${clientName}`,
+                message: `transação de R$ ${transactionValue}`,
+              })
+              
+              // Atualizar dados
+              fetchUserData()
+            }
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      subscription.unsubscribe()
+      transactionsChannel.unsubscribe()
+    }
   }, [fetchUserData])
 
   const debouncedRefreshData = useCallback(() => {
@@ -339,20 +398,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
 
     if (error) throw error
 
-    // Notificar admins
-    const { data: admins } = await supabase.from("profiles").select("id").eq("role", "admin")
-
-    if (admins && admins.length > 0) {
-      for (const admin of admins) {
-        await supabase.from("notifications").insert({
-          user_id: admin.id,
-          type: "receipt_uploaded",
-          title: `nova transação de ${profile?.full_name || "Cliente"}`,
-          message: `transação de R$ ${data.grossValue.toFixed(2)}`,
-        })
-      }
-    }
-
+    // As notificações agora são criadas automaticamente via Realtime
     await refreshData()
   }
 
@@ -760,13 +806,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     }))
 
     const { error: ratesError } = await supabase.from("custom_plan_rates").insert(ratesData)
-
-    if (ratesError) {
-      console.error("[v0] Erro ao inserir taxas:", ratesError)
-      // Rollback: deletar o plano criado
-      await supabase.from("custom_plans").delete().eq("id", planData.id)
-      throw new Error(ratesError.message || "Erro ao criar taxas do plano")
-    }
+    if (ratesError) throw ratesError
 
     console.log("[v0] Plano personalizado criado com sucesso!")
     await refreshData()
