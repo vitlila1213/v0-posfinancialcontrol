@@ -15,7 +15,8 @@ import { motion, AnimatePresence } from "framer-motion"
 const statusConfig: Record<string, { label: string; color: string }> = {
   pending_receipt: { label: "Aguardando Comprovante", color: "bg-amber-500/20 text-amber-500" },
   pending_verification: { label: "Em Verificação", color: "bg-blue-500/20 text-blue-500" },
-  verified: { label: "Verificado", color: "bg-emerald-500/20 text-emerald-500" },
+  approved: { label: "Aprovada", color: "bg-emerald-500/20 text-emerald-500" },
+  verified: { label: "Aprovada", color: "bg-emerald-500/20 text-emerald-500" },
   rejected: { label: "Rejeitado", color: "bg-rose-500/20 text-rose-500" },
   paid: { label: "Pago", color: "bg-purple-500/20 text-purple-500" },
   chargeback: { label: "Estornado", color: "bg-red-500/20 text-red-500" },
