@@ -80,13 +80,18 @@ export default function CodigosPage() {
     }
   }
 
-  const copyToClipboard = async (code: string, codeId: string) => {
-    if (copiedCodes.has(code)) return // Já foi copiado, não permitir novamente
-    
+  const copyToClipboard = async (code: string) => {
     try {
       await navigator.clipboard.writeText(code)
-      
-      // Marcar código como usado no banco de dados
+      setCopiedCode(code)
+      setTimeout(() => setCopiedCode(null), 2000)
+    } catch (error) {
+      console.error("[v0] Error copying code:", error)
+    }
+  }
+
+  const markAsUsed = async (codeId: string, code: string) => {
+    try {
       const { error } = await supabase
         .from("access_codes")
         .update({
@@ -101,15 +106,12 @@ export default function CodigosPage() {
         throw error
       }
       
-      setCopiedCode(code)
       setCopiedCodes(new Set(copiedCodes).add(code))
       
       // Recarregar códigos para atualizar a lista
       await fetchAccessCodes()
-      
-      setTimeout(() => setCopiedCode(null), 2000)
     } catch (error) {
-      console.error("[v0] Error copying code:", error)
+      console.error("[v0] Error marking code as used:", error)
     }
   }
 
@@ -222,19 +224,31 @@ export default function CodigosPage() {
                       </span>
                     </div>
                   </div>
-                  <Button 
-                    size="sm" 
-                    variant="ghost" 
-                    onClick={() => copyToClipboard(code.code, code.id)} 
-                    className="h-8 w-8 p-0"
-                    disabled={isCopied}
-                  >
-                    {copiedCode === code.code ? (
-                      <Check className="h-4 w-4 text-emerald-500" />
-                    ) : (
-                      <Copy className={`h-4 w-4 ${isCopied ? "text-muted-foreground" : ""}`} />
+                  <div className="flex items-center gap-2">
+                    <Button 
+                      size="sm" 
+                      variant="ghost" 
+                      onClick={() => copyToClipboard(code.code)} 
+                      className="h-8 w-8 p-0"
+                      title="Copiar código"
+                    >
+                      {copiedCode === code.code ? (
+                        <Check className="h-4 w-4 text-emerald-500" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </Button>
+                    {!isCopied && (
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        onClick={() => markAsUsed(code.id, code.code)} 
+                        className="h-8 px-3 text-xs"
+                      >
+                        Usado
+                      </Button>
                     )}
-                  </Button>
+                  </div>
                 </div>
               )
             })}
