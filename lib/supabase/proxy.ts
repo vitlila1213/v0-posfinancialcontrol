@@ -14,6 +14,12 @@ export async function updateSession(request: NextRequest) {
     const env = getSupabaseEnv()
     url = env.url
     anonKey = env.anonKey
+    
+    // If anonKey is empty, skip auth check
+    if (!anonKey || anonKey === "") {
+      console.log("[v0] Supabase anonKey is empty in middleware, skipping auth check")
+      return supabaseResponse
+    }
   } catch (error) {
     console.log("[v0] Supabase env not available in middleware, skipping auth check:", error)
     return supabaseResponse
