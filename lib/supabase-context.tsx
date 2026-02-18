@@ -527,18 +527,20 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     const transaction = transactions.find((t) => t.id === transactionId)
     if (!transaction) return
 
+    // Apenas atualizar campos que existem na tabela transactions
     const { error } = await supabase
       .from("transactions")
       .update({
         status: "rejected",
         rejection_reason: reason,
-        rejected_by: user.id,
-        rejected_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
       .eq("id", transactionId)
 
-    if (error) throw error
+    if (error) {
+      console.error("[v0] Error rejecting transaction:", error)
+      throw error
+    }
 
     await supabase.from("notifications").insert({
       user_id: transaction.user_id,
