@@ -70,10 +70,24 @@ export default function ClientLoginPage() {
 
   const handleVerifyEmail = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    console.log("[v0] Verificando email:", resetEmail)
+    
+    if (!resetEmail || resetEmail.trim() === "") {
+      toast({
+        title: "Erro",
+        description: "Por favor, digite um e-mail válido.",
+        variant: "destructive",
+      })
+      return
+    }
+    
     const supabase = createClient()
     setIsVerifyingEmail(true)
 
     try {
+      console.log("[v0] Buscando email na tabela profiles...")
+      
       // Verificar se o email existe na tabela profiles
       const { data, error } = await supabase
         .from("profiles")
@@ -81,23 +95,27 @@ export default function ClientLoginPage() {
         .eq("email", resetEmail)
         .single()
 
+      console.log("[v0] Resultado da busca:", { data, error })
+
       if (error || !data) {
+        console.log("[v0] Email não encontrado")
         toast({
           title: "Email não encontrado",
           description: "Este e-mail não está cadastrado no sistema.",
           variant: "destructive",
         })
-        setIsVerifyingEmail(false)
         return
       }
 
       // Email encontrado, mostrar campos de nova senha
+      console.log("[v0] Email verificado com sucesso!")
       setEmailVerified(true)
       toast({
         title: "Email verificado!",
         description: "Agora você pode definir uma nova senha.",
       })
     } catch (err: unknown) {
+      console.log("[v0] Erro ao verificar email:", err)
       toast({
         title: "Erro",
         description: err instanceof Error ? err.message : "Erro ao verificar email",
