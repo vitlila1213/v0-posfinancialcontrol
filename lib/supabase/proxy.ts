@@ -7,19 +7,7 @@ export async function updateSession(request: NextRequest) {
     request,
   })
 
-  // Try to get Supabase env, but don't crash if not available yet
-  let url: string
-  let anonKey: string
-  
-  try {
-    const env = getSupabaseEnv()
-    url = env.url
-    anonKey = env.anonKey
-  } catch (error) {
-    console.error("[v0] Supabase env not available in middleware, skipping auth check:", error)
-    // Return early if Supabase is not configured yet
-    return supabaseResponse
-  }
+  const { url, anonKey } = getSupabaseEnv()
 
   const supabase = createServerClient(url, anonKey, {
     cookies: {
@@ -52,23 +40,17 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  let adminClient
-  try {
-    const { url: serviceUrl, serviceRoleKey } = getSupabaseServiceEnv()
-    adminClient = createServerClient(serviceUrl, serviceRoleKey, {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-        },
+  const { url: serviceUrl, serviceRoleKey } = getSupabaseServiceEnv()
+  const adminClient = createServerClient(serviceUrl, serviceRoleKey, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll()
       },
-    })
-  } catch (error) {
-    console.error("[v0] Supabase service role not available, skipping role check:", error)
-    return supabaseResponse
-  }
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
+      },
+    },
+  })
 
   // Se está logado, verifica o role para redirecionar corretamente
   if (user && (isClientRoute || isAdminRoute)) {
