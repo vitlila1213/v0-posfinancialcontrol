@@ -437,18 +437,6 @@ export default function AdminClientesPage() {
     }
   }
 
-    try {
-      console.log("[v0] Calling deleteClient from context...")
-      await deleteClient(clientId)
-      console.log("[v0] Delete successful, refreshing data...")
-      toast.success("Cliente excluído com sucesso") // Use toast.success directly
-      refreshData()
-    } catch (error: any) {
-      console.error("[v0] Error in handleDeleteClient:", error)
-      toast.error(`Erro ao excluir cliente: ${error.message}`) // Use toast.error directly
-    }
-  }
-
   return (
     <div className="space-y-6">
       <div>
