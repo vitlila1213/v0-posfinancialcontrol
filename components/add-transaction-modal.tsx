@@ -359,39 +359,35 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
 
       // Check if it's a custom plan (UUID format)
       if (clientPlan !== "basic" && clientPlan !== "intermediario" && clientPlan !== "top") {
-        console.log("[v0] É um plano personalizado, buscando taxas...")
+        console.log("[v0] É um plano personalizado, buscando taxas via API...")
         setIsLoadingRates(true)
         try {
-          const supabase = createClient()
+          // Buscar taxas através da API server-side ao invés de client-side
+          const response = await fetch(`/api/custom-plans/rates?planId=${clientPlan}`)
           
-          // Fetch custom plan name
-          const { data: planData, error: planError } = await supabase
-            .from("custom_plans")
-            .select("name")
-            .eq("id", clientPlan)
-            .single()
-
-          if (planError) {
-            console.error("[v0] Erro ao buscar nome do plano:", planError)
-          } else if (planData) {
-            console.log("[v0] Nome do plano personalizado:", planData.name)
-            setCustomPlanName(planData.name)
+          if (!response.ok) {
+            console.error("[v0] Erro na resposta da API:", response.status)
+            setCustomRates([])
+            setCustomPlanName("")
+            return
           }
 
-          // Fetch custom rates
-          const { data, error } = await supabase.from("custom_plan_rates").select("*").eq("plan_id", clientPlan)
-
-          if (error) {
-            console.error("[v0] Erro ao buscar taxas personalizadas:", error)
-            setCustomRates([])
+          const result = await response.json()
+          
+          if (result.success) {
+            console.log("[v0] Nome do plano personalizado:", result.planName)
+            console.log("[v0] Taxas personalizadas carregadas:", result.rates?.length || 0)
+            setCustomPlanName(result.planName)
+            setCustomRates(result.rates || [])
           } else {
-            console.log("[v0] Taxas personalizadas carregadas para transação:", data)
-            console.log("[v0] Número de taxas encontradas:", data?.length || 0)
-            setCustomRates(data || [])
+            console.error("[v0] API retornou erro:", result.error)
+            setCustomRates([])
+            setCustomPlanName("")
           }
         } catch (err) {
-          console.error("[v0] Erro ao buscar taxas:", err)
+          console.error("[v0] Erro ao buscar taxas via API:", err)
           setCustomRates([])
+          setCustomPlanName("")
         } finally {
           setIsLoadingRates(false)
         }
