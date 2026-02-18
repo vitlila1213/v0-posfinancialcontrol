@@ -1054,16 +1054,29 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
 
   const deleteClient = async (clientId: string) => {
     console.log("[v0] Deleting client:", clientId)
+    
+    try {
+      // Chamar a API que usa service role para deletar do auth também
+      const response = await fetch("/api/admin/delete-user", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ userId: clientId }),
+      })
 
-    const { error } = await supabase.from("profiles").delete().eq("id", clientId)
+      const result = await response.json()
 
-    if (error) {
-      console.error("[v0] Error deleting client:", error.message)
-      throw new Error(`Erro ao excluir cliente: ${error.message}`)
+      if (!response.ok) {
+        throw new Error(result.error || "Erro ao deletar cliente")
+      }
+
+      console.log("[v0] Client deleted successfully:", result)
+      await refreshData()
+    } catch (error: any) {
+      console.error("[v0] Error deleting client:", error)
+      throw new Error(error.message || "Erro ao excluir cliente")
     }
-
-    console.log("[v0] Client deleted successfully")
-    await refreshData()
   }
 
   const logout = async () => {
