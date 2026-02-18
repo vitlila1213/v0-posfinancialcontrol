@@ -345,8 +345,8 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       let feePaymentType: "debit" | "credit" | "pix_qrcode" | "pix_conta"
       
       if (data.brand === "pix") {
-        // Para PIX, usar VISA_MASTER como bandeira padrão para buscar taxas
-        brandGroup = "VISA_MASTER" as BrandGroup
+        // PIX agora é um brand_group independente
+        brandGroup = "PIX" as BrandGroup
         feePaymentType = data.paymentType as "pix_qrcode" | "pix_conta"
       } else {
         brandGroup = data.brand === "visa_master" ? "VISA_MASTER" : "ELO_AMEX"

@@ -52,7 +52,6 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
   const [success, setSuccess] = useState(false)
   const [isProcessingImage, setIsProcessingImage] = useState(false) // Declare the variable here
   const [customPlanName, setCustomPlanName] = useState<string>("")
-  const [pixBrand, setPixBrand] = useState<"VISA_MASTER" | "ELO_AMEX">("VISA_MASTER") // Bandeira real para PIX
 
   useEffect(() => {
     if (open) {
@@ -152,14 +151,10 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
     }
 
     try {
-      // Quando PIX é selecionado, usar a bandeira real (pixBrand) para buscar as taxas
-      const effectiveBrand = brand === "PIX" ? pixBrand : brand
-      
+      // PIX agora é um brand_group independente
       console.log("[v0] Calculating fee with:", { 
         amount, 
         brand, 
-        effectiveBrand,
-        pixBrand,
         paymentType, 
         installments, 
         clientPlan,
@@ -177,7 +172,7 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
       
       const result = calculateFee(
         amount,
-        effectiveBrand,
+        brand,
         finalPaymentType,
         installments,
         clientPlan,
@@ -196,7 +191,7 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
       console.error("[v0] Error calculating fee:", err)
       return null
     }
-  }, [grossAmount, brand, pixBrand, paymentType, installments, clientPlan, customRates, isCustomPlan, isLoadingRates])
+  }, [grossAmount, brand, paymentType, installments, clientPlan, customRates, isCustomPlan, isLoadingRates])
 
   const planRates = clientPlan && (clientPlan === "basic" || clientPlan === "intermediario" || clientPlan === "top") 
     ? PLAN_RATES[clientPlan] 
@@ -631,36 +626,6 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
                         ))}
                       </div>
                     </div>
-
-                    {brand === "PIX" && (
-                      <div>
-                        <Label className="text-xs text-muted-foreground sm:text-sm">Bandeira PIX</Label>
-                        <div className="mt-1 grid grid-cols-2 gap-2 sm:mt-1.5">
-                          <button
-                            onClick={() => setPixBrand("VISA_MASTER")}
-                            className={cn(
-                              "rounded-lg border p-2.5 text-xs font-medium transition-all sm:p-3 sm:text-sm",
-                              pixBrand === "VISA_MASTER"
-                                ? "border-emerald-500 bg-emerald-500/20 text-emerald-500"
-                                : "border-white/10 bg-white/5 text-muted-foreground hover:border-white/20",
-                            )}
-                          >
-                            Visa / Master
-                          </button>
-                          <button
-                            onClick={() => setPixBrand("ELO_AMEX")}
-                            className={cn(
-                              "rounded-lg border p-2.5 text-xs font-medium transition-all sm:p-3 sm:text-sm",
-                              pixBrand === "ELO_AMEX"
-                                ? "border-emerald-500 bg-emerald-500/20 text-emerald-500"
-                                : "border-white/10 bg-white/5 text-muted-foreground hover:border-white/20",
-                            )}
-                          >
-                            Elo / Amex
-                          </button>
-                        </div>
-                      </div>
-                    )}
 
                     <div>
                       <Label className="text-xs text-muted-foreground sm:text-sm">Tipo de Pagamento</Label>

@@ -4,8 +4,12 @@
 -- PIX não é uma transação de cartão, então não deve estar vinculado a bandeiras
 -- Vamos criar um brand_group "PIX" separado para as taxas de PIX
 
--- 1. Adicionar "PIX" como um brand_group válido
--- Primeiro, vamos verificar se já existem taxas PIX vinculadas a bandeiras
+-- 1. Adicionar "PIX" como um brand_group válido no check constraint
+ALTER TABLE custom_plan_rates DROP CONSTRAINT IF EXISTS custom_plan_rates_brand_group_check;
+ALTER TABLE custom_plan_rates ADD CONSTRAINT custom_plan_rates_brand_group_check 
+    CHECK (brand_group IN ('VISA_MASTER', 'ELO_AMEX', 'PIX'));
+
+-- Verificar se já existem taxas PIX vinculadas a bandeiras
 SELECT 
     cp.name as plano,
     cpr.brand_group,
@@ -23,7 +27,7 @@ SELECT DISTINCT
     cpr.plan_id,
     'PIX' as brand_group,
     cpr.payment_type,
-    NULL as installments,
+    NULL::integer as installments,
     cpr.rate
 FROM custom_plan_rates cpr
 WHERE cpr.payment_type IN ('pix_conta', 'pix_qrcode')
