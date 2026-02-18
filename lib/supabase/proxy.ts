@@ -17,15 +17,15 @@ export async function updateSession(request: NextRequest) {
     
     // If anonKey is empty, skip auth check
     if (!anonKey || anonKey === "") {
-      console.log("[v0] Supabase anonKey is empty in middleware, skipping auth check")
       return supabaseResponse
     }
   } catch (error) {
-    console.log("[v0] Supabase env not available in middleware, skipping auth check:", error)
     return supabaseResponse
   }
 
-  const supabase = createServerClient(url, anonKey, {
+  let supabase
+  try {
+    supabase = createServerClient(url, anonKey, {
     cookies: {
       getAll() {
         return request.cookies.getAll()
@@ -39,6 +39,9 @@ export async function updateSession(request: NextRequest) {
       },
     },
   })
+  } catch (error) {
+    return supabaseResponse
+  }
 
   const {
     data: { user },
