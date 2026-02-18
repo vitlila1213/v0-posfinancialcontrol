@@ -1,7 +1,14 @@
 import { createClient } from "@supabase/supabase-js"
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+if (!supabaseUrl || !supabaseServiceKey) {
+  console.error("❌ Erro: Variáveis de ambiente do Supabase não configuradas")
+  console.error("NEXT_PUBLIC_SUPABASE_URL:", supabaseUrl ? "Configurada ✓" : "Não configurada ✗")
+  console.error("SUPABASE_SERVICE_ROLE_KEY:", supabaseServiceKey ? "Configurada ✓" : "Não configurada ✗")
+  process.exit(1)
+}
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
