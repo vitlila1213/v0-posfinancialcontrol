@@ -258,11 +258,19 @@ export function calculateFee(
     }
   }
 
+  // Para PIX, as taxas estão salvas nas bandeiras reais (VISA_MASTER ou ELO_AMEX)
+  // Então quando brandGroup for "PIX", vamos usar VISA_MASTER como padrão
+  let effectiveBrandGroup = brandGroup
+  if (brandGroup === "PIX" && (paymentType === "pix_conta" || paymentType === "pix_qrcode")) {
+    effectiveBrandGroup = "VISA_MASTER"
+    console.log("[v0] PIX detectado, usando VISA_MASTER para buscar taxa")
+  }
+
   let feePercentage: number
 
   // Se é plano personalizado (UUID)
   if (plan !== "basic" && plan !== "intermediario" && plan !== "top" && customRates) {
-    const customRate = getCustomPlanRate(customRates, brandGroup, paymentType, installments)
+    const customRate = getCustomPlanRate(customRates, effectiveBrandGroup, paymentType, installments)
     if (customRate === null) {
       console.warn("[v0] Taxa não encontrada para plano personalizado")
       return {
@@ -275,10 +283,10 @@ export function calculateFee(
     feePercentage = customRate
   } else {
     // Plano fixo (basic, intermediario, top)
-    const rates = PLAN_RATES[plan as "basic" | "intermediario" | "top"][brandGroup]
+    const rates = PLAN_RATES[plan as "basic" | "intermediario" | "top"][effectiveBrandGroup]
 
     if (!rates) {
-      console.error("[v0] Rates not found for brandGroup:", brandGroup, "plan:", plan)
+      console.error("[v0] Rates not found for brandGroup:", effectiveBrandGroup, "plan:", plan)
       return {
         grossAmount,
         netAmount: 0,
