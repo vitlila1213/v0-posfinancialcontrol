@@ -345,6 +345,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       let feePaymentType: "debit" | "credit" | "pix_qrcode" | "pix_conta"
       
       if (data.brand === "pix") {
+        // PIX agora é um brand_group independente
         brandGroup = "PIX" as BrandGroup
         feePaymentType = data.paymentType as "pix_qrcode" | "pix_conta"
       } else {
@@ -354,12 +355,32 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       
       console.log("[v0] Calculating fee with:", { brandGroup, feePaymentType, plan: profile.plan })
       
+      // Buscar customRates se for plano personalizado
+      let customRates: any[] | undefined
+      const isCustomPlan = profile.plan !== "basic" && profile.plan !== "intermediario" && profile.plan !== "top"
+      
+      if (isCustomPlan) {
+        try {
+          const response = await fetch(`/api/custom-plans/rates?planId=${profile.plan}`)
+          if (response.ok) {
+            const result = await response.json()
+            if (result.success) {
+              customRates = result.rates
+              console.log("[v0] Custom rates loaded:", customRates?.length || 0)
+            }
+          }
+        } catch (error) {
+          console.error("[v0] Error loading custom rates:", error)
+        }
+      }
+      
       const calculation = calculateFee(
         data.grossValue,
         brandGroup,
         feePaymentType as any,
         data.installments as Installments,
         profile.plan,
+        customRates,
       )
       
       console.log("[v0] Calculation result:", calculation)
@@ -506,18 +527,20 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     const transaction = transactions.find((t) => t.id === transactionId)
     if (!transaction) return
 
+    // Apenas atualizar campos que existem na tabela transactions
     const { error } = await supabase
       .from("transactions")
       .update({
         status: "rejected",
         rejection_reason: reason,
-        rejected_by: user.id,
-        rejected_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
       .eq("id", transactionId)
 
-    if (error) throw error
+    if (error) {
+      console.error("[v0] Error rejecting transaction:", error)
+      throw error
+    }
 
     await supabase.from("notifications").insert({
       user_id: transaction.user_id,

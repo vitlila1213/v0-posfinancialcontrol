@@ -58,7 +58,7 @@ const PLANO_BASICO = {
   },
   PIX: {
     name: "PIX",
-    pix_conta: 0.5,
+    pix_conta: 1.0,
     pix_qrcode: 1.5,
   },
 }
@@ -115,7 +115,7 @@ const PLANO_INTERMEDIARIO = {
   },
   PIX: {
     name: "PIX",
-    pix_conta: 0.5,
+    pix_conta: 0.75,
     pix_qrcode: 1.3,
   },
 }
