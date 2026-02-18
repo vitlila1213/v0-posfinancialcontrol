@@ -82,22 +82,24 @@ export default function ClientLoginPage() {
       return
     }
     
-    const supabase = createClient()
     setIsVerifyingEmail(true)
 
     try {
-      console.log("[v0] Buscando email na tabela profiles...")
+      console.log("[v0] Chamando API de verificação...")
       
-      // Verificar se o email existe na tabela profiles
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("email")
-        .eq("email", resetEmail)
-        .single()
+      // Chamar API para verificar se o email existe
+      const response = await fetch("/api/auth/verify-email", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email: resetEmail }),
+      })
 
-      console.log("[v0] Resultado da busca:", { data, error })
+      const result = await response.json()
+      console.log("[v0] Resposta da API:", result)
 
-      if (error || !data) {
+      if (!response.ok || !result.success) {
         console.log("[v0] Email não encontrado")
         toast({
           title: "Email não encontrado",
