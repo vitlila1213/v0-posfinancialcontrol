@@ -570,8 +570,23 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
                     
                     {isCustomPlan && !isLoadingRates && customRates.length === 0 && (
                       <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3">
-                        <div className="text-xs text-rose-400 sm:text-sm">
-                          Não foi possível carregar as taxas do plano {customPlanName || "personalizado"}. Por favor, recarregue a página.
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="text-xs text-rose-400 sm:text-sm">
+                            Não foi possível carregar as taxas do plano {customPlanName || "personalizado"}. As taxas estão salvas no banco, mas houve um erro ao carregá-las.
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              console.log("[v0] Tentando recarregar taxas...")
+                              setIsLoadingRates(true)
+                              // Força um reload fechando e reabrindo o modal ou recarregando a página
+                              window.location.reload()
+                            }}
+                            className="shrink-0 border-rose-400/30 text-rose-400 hover:bg-rose-500/20"
+                          >
+                            Recarregar
+                          </Button>
                         </div>
                       </div>
                     )}
