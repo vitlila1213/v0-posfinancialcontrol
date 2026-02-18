@@ -671,7 +671,7 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
                   >
                     {calculation &&
                       calculation.grossAmount !== undefined &&
-                      calculation.fee !== undefined &&
+                      calculation.feeAmount !== undefined &&
                       calculation.netAmount !== undefined && (
                         <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4">
                           <div className="space-y-2">
@@ -682,8 +682,8 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
                               </span>
                             </div>
                             <div className="flex justify-between text-sm">
-                              <span className="text-muted-foreground">Taxa ({calculation.rate}%):</span>
-                              <span className="font-semibold text-rose-500">- R$ {calculation.fee.toFixed(2)}</span>
+                              <span className="text-muted-foreground">Taxa ({calculation.feePercentage.toFixed(2)}%):</span>
+                              <span className="font-semibold text-rose-500">- R$ {calculation.feeAmount.toFixed(2)}</span>
                             </div>
                             <div className="h-px bg-white/10" />
                             <div className="flex justify-between">
