@@ -274,19 +274,47 @@ export function calculateFee(
     // Plano fixo (basic, intermediario, top)
     const rates = PLAN_RATES[plan as "basic" | "intermediario" | "top"][brandGroup]
 
+    if (!rates) {
+      console.error("[v0] Rates not found for brandGroup:", brandGroup, "plan:", plan)
+      return {
+        grossAmount,
+        netAmount: 0,
+        feeAmount: 0,
+        feePercentage: 0,
+      }
+    }
+
     if (paymentType === "pix_conta") {
       feePercentage = (rates as any).pix_conta
+      if (feePercentage === undefined) {
+        console.error("[v0] pix_conta rate not found for brandGroup:", brandGroup)
+        feePercentage = 0
+      }
     } else if (paymentType === "pix_qrcode") {
       feePercentage = (rates as any).pix_qrcode
+      if (feePercentage === undefined) {
+        console.error("[v0] pix_qrcode rate not found for brandGroup:", brandGroup)
+        feePercentage = 0
+      }
     } else if (paymentType === "debit") {
       feePercentage = (rates as any).debit
+      if (feePercentage === undefined) {
+        console.error("[v0] debit rate not found for brandGroup:", brandGroup)
+        feePercentage = 0
+      }
     } else {
       feePercentage = (rates as any).credit[installments]
+      if (feePercentage === undefined) {
+        console.error("[v0] credit rate not found for installments:", installments, "brandGroup:", brandGroup)
+        feePercentage = 0
+      }
     }
   }
 
   const feeAmount = (grossAmount * feePercentage) / 100
   const netAmount = grossAmount - feeAmount
+
+  console.log("[v0] calculateFee result:", { grossAmount, feeAmount, netAmount, feePercentage })
 
   return {
     grossAmount,

@@ -327,79 +327,109 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     receiptFile?: File
     noReceiptReason?: string
   }) => {
-    if (!user || !profile) return
+    if (!user || !profile) {
+      console.error("[v0] addTransaction: user or profile is null")
+      throw new Error("Usuário não autenticado")
+    }
 
     // Verifica se cliente tem plano atribuído
     if (profile.role === "client" && !profile.plan) {
       throw new Error("Você ainda não possui um plano atribuído. Aguarde o gestor configurar seu plano.")
     }
 
-    // Determinar brandGroup e paymentType corretos
-    let brandGroup: BrandGroup
-    let feePaymentType: "debit" | "credit" | "pix_qrcode" | "pix_conta"
-    
-    if (data.brand === "pix") {
-      brandGroup = "PIX" as BrandGroup
-      feePaymentType = data.paymentType as "pix_qrcode" | "pix_conta"
-    } else {
-      brandGroup = data.brand === "visa_master" ? "VISA_MASTER" : "ELO_AMEX"
-      feePaymentType = data.paymentType as "debit" | "credit"
-    }
-    
-    const calculation = calculateFee(
-      data.grossValue,
-      brandGroup,
-      feePaymentType as any,
-      data.installments as Installments,
-      profile.plan,
-    )
-
-    let receiptUrl: string | null = null
-
-    // Fazer upload do comprovante para o Supabase Storage
-    if (data.receiptFile) {
-      const fileName = `${user.id}/${Date.now()}-${data.receiptFile.name}`
+    try {
+      console.log("[v0] addTransaction called with:", data)
       
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from("transaction-receipts")
-        .upload(fileName, data.receiptFile, {
-          upsert: true,
-          contentType: data.receiptFile.type
-        })
-
-      if (uploadError) {
-        throw new Error(`Erro ao fazer upload do comprovante: ${uploadError.message}`)
+      // Determinar brandGroup e paymentType corretos
+      let brandGroup: BrandGroup
+      let feePaymentType: "debit" | "credit" | "pix_qrcode" | "pix_conta"
+      
+      if (data.brand === "pix") {
+        brandGroup = "PIX" as BrandGroup
+        feePaymentType = data.paymentType as "pix_qrcode" | "pix_conta"
+      } else {
+        brandGroup = data.brand === "visa_master" ? "VISA_MASTER" : "ELO_AMEX"
+        feePaymentType = data.paymentType as "debit" | "credit"
       }
       
-      // Obter URL pública
-      const { data: publicUrlData } = supabase.storage
-        .from("transaction-receipts")
-        .getPublicUrl(uploadData.path)
+      console.log("[v0] Calculating fee with:", { brandGroup, feePaymentType, plan: profile.plan })
+      
+      const calculation = calculateFee(
+        data.grossValue,
+        brandGroup,
+        feePaymentType as any,
+        data.installments as Installments,
+        profile.plan,
+      )
+      
+      console.log("[v0] Calculation result:", calculation)
+      
+      if (!calculation || calculation.grossAmount === undefined || calculation.netAmount === undefined) {
+        throw new Error("Erro ao calcular taxas da transação")
+      }
 
-      receiptUrl = publicUrlData.publicUrl
+      let receiptUrl: string | null = null
+
+      // Fazer upload do comprovante para o Supabase Storage
+      if (data.receiptFile) {
+        console.log("[v0] Uploading receipt file:", data.receiptFile.name)
+        const fileName = `${user.id}/${Date.now()}-${data.receiptFile.name}`
+        
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from("transaction-receipts")
+          .upload(fileName, data.receiptFile, {
+            upsert: true,
+            contentType: data.receiptFile.type
+          })
+
+        if (uploadError) {
+          console.error("[v0] Upload error:", uploadError)
+          throw new Error(`Erro ao fazer upload do comprovante: ${uploadError.message}`)
+        }
+        
+        // Obter URL pública
+        const { data: publicUrlData } = supabase.storage
+          .from("transaction-receipts")
+          .getPublicUrl(uploadData.path)
+
+        receiptUrl = publicUrlData.publicUrl
+        console.log("[v0] Receipt uploaded successfully:", receiptUrl)
+      }
+
+      const status = receiptUrl ? "pending_verification" : "pending_receipt"
+
+      const transactionData = {
+        user_id: user.id,
+        gross_value: data.grossValue,
+        brand: data.brand,
+        payment_type: data.paymentType,
+        installments: data.installments,
+        fee_percentage: calculation.feePercentage,
+        fee_value: calculation.feeAmount,
+        net_value: calculation.netAmount,
+        receipt_url: receiptUrl,
+        no_receipt_reason: data.noReceiptReason || null,
+        status,
+        is_chargeback: false,
+      }
+      
+      console.log("[v0] Inserting transaction:", transactionData)
+
+      const { error } = await supabase.from("transactions").insert(transactionData)
+
+      if (error) {
+        console.error("[v0] Insert error:", error)
+        throw new Error(`Erro ao salvar transação: ${error.message}`)
+      }
+
+      console.log("[v0] Transaction added successfully")
+      
+      // As notificações agora são criadas automaticamente via Realtime
+      await refreshData()
+    } catch (err) {
+      console.error("[v0] addTransaction error:", err)
+      throw err
     }
-
-    const status = receiptUrl ? "pending_verification" : "pending_receipt"
-
-    const { error } = await supabase.from("transactions").insert({
-      user_id: user.id,
-      gross_value: data.grossValue,
-      brand: data.brand,
-      payment_type: data.paymentType,
-      installments: data.installments,
-      fee_percentage: calculation.feePercentage,
-      fee_value: calculation.feeAmount,
-      net_value: calculation.netAmount,
-      receipt_url: receiptUrl,
-      no_receipt_reason: data.noReceiptReason || null,
-      status,
-      is_chargeback: false,
-    })
-
-    if (error) throw error
-
-    // As notificações agora são criadas automaticamente via Realtime
-    await refreshData()
   }
 
   const updateTransaction = async (id: string, updates: Partial<Transaction>) => {

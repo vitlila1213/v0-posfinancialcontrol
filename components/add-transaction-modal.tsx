@@ -126,25 +126,54 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
   const calculation = useMemo(() => {
     if (!grossAmount || !clientPlan) return null
     const amount = Number.parseFloat(grossAmount)
-    if (isNaN(amount)) return null
+    if (isNaN(amount) || amount <= 0) return null
 
-    console.log("[v0] Calculating fee with:", { amount, brand, paymentType, installments, clientPlan })
-    const result = calculateFee(
-      amount,
-      brand,
-      paymentType,
-      installments,
-      clientPlan,
-      customRates.length > 0 ? customRates : undefined,
-    )
-    console.log("[v0] Calculation result:", result)
-    return result
+    try {
+      console.log("[v0] Calculating fee with:", { amount, brand, paymentType, installments, clientPlan })
+      
+      // Validação de paymentType para PIX
+      let finalPaymentType: "debit" | "credit" | "pix_qrcode" | "pix_conta"
+      if (brand === "PIX") {
+        finalPaymentType = paymentType === "pix_qrcode" ? "pix_qrcode" : "pix_conta"
+      } else {
+        finalPaymentType = paymentType === "debit" ? "debit" : "credit"
+      }
+      
+      const result = calculateFee(
+        amount,
+        brand,
+        finalPaymentType,
+        installments,
+        clientPlan,
+        customRates.length > 0 ? customRates : undefined,
+      )
+      console.log("[v0] Calculation result:", result)
+      
+      // Validar resultado
+      if (!result || result.grossAmount === undefined || result.netAmount === undefined) {
+        console.error("[v0] Invalid calculation result:", result)
+        return null
+      }
+      
+      return result
+    } catch (err) {
+      console.error("[v0] Error calculating fee:", err)
+      return null
+    }
   }, [grossAmount, brand, paymentType, installments, clientPlan, customRates])
 
   const planRates = clientPlan ? PLAN_RATES[clientPlan] : null
 
   const handleSubmit = async () => {
-    if (!numericAmount || numericAmount <= 0) return
+    if (!numericAmount || numericAmount <= 0) {
+      setError("Por favor, insira um valor válido")
+      return
+    }
+
+    if (!clientPlan) {
+      setError("Plano não atribuído. Entre em contato com o gestor.")
+      return
+    }
 
     setIsSubmitting(true)
     setError(null)
@@ -158,10 +187,18 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
         clientPlan,
       })
 
+      // Validação de paymentType para PIX
+      let finalPaymentType: "debit" | "credit" | "pix_qrcode" | "pix_conta"
+      if (brand === "PIX") {
+        finalPaymentType = paymentType === "pix_qrcode" ? "pix_qrcode" : "pix_conta"
+      } else {
+        finalPaymentType = paymentType === "debit" ? "debit" : "credit"
+      }
+
       const feeCalculation = calculateFee(
         numericAmount,
         brand,
-        paymentType === "pix_qrcode" ? "pix_qrcode" : paymentType === "pix_conta" ? "pix_conta" : paymentType,
+        finalPaymentType,
         installments,
         clientPlan,
         customRates.length > 0 ? customRates : undefined,
@@ -169,22 +206,29 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
 
       console.log("[v0] Fee calculation result:", feeCalculation)
 
+      // Validação dos resultados do cálculo
+      if (!feeCalculation || feeCalculation.grossAmount === undefined || feeCalculation.netAmount === undefined) {
+        throw new Error("Erro ao calcular taxas. Verifique os dados inseridos.")
+      }
+
       await addTransaction({
         grossValue: feeCalculation.grossAmount,
         brand: brand === "PIX" ? "pix" : brand === "VISA_MASTER" ? "visa_master" : "elo_amex",
-        paymentType:
-          paymentType === "pix_qrcode" ? "pix_qrcode" : paymentType === "pix_conta" ? "pix_conta" : paymentType,
+        paymentType: finalPaymentType,
         installments,
         receiptFile: receiptFile || undefined,
         noReceiptReason: !receiptFile && noReceiptReason ? noReceiptReason : undefined,
       })
 
+      toast.success("Transação adicionada com sucesso!")
       handleClose()
       setSuccess(true)
       setTimeout(() => setSuccess(false), 3000)
     } catch (err) {
       console.error("[v0] Erro ao adicionar transação:", err)
-      setError(err instanceof Error ? err.message : "Erro ao adicionar transação")
+      const errorMessage = err instanceof Error ? err.message : "Erro ao adicionar transação"
+      setError(errorMessage)
+      toast.error(errorMessage)
     } finally {
       setIsSubmitting(false)
     }
