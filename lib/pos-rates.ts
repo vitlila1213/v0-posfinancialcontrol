@@ -221,8 +221,6 @@ export function getCustomPlanRate(
   paymentType: PaymentType,
   installments: Installments = 1,
 ): number | null {
-  console.log("[v0] getCustomPlanRate buscando:", { brandGroup, paymentType, installments, totalRates: rates.length })
-  
   // Buscar taxa específica
   const rate = rates.find((r) => {
     if (r.brand_group !== brandGroup) return false
@@ -237,7 +235,6 @@ export function getCustomPlanRate(
     return r.installments === null
   })
 
-  console.log("[v0] Taxa encontrada:", rate)
   return rate ? rate.rate : null
 }
 
@@ -263,7 +260,6 @@ export function calculateFee(
   let effectiveBrandGroup = brandGroup
   if (brandGroup === "PIX" && (paymentType === "pix_conta" || paymentType === "pix_qrcode")) {
     effectiveBrandGroup = "VISA_MASTER"
-    console.log("[v0] PIX detectado, usando VISA_MASTER para buscar taxa")
   }
 
   let feePercentage: number
@@ -324,8 +320,6 @@ export function calculateFee(
 
   const feeAmount = (grossAmount * feePercentage) / 100
   const netAmount = grossAmount - feeAmount
-
-  console.log("[v0] calculateFee result:", { grossAmount, feeAmount, netAmount, feePercentage })
 
   return {
     grossAmount,
