@@ -410,16 +410,32 @@ export default function AdminClientesPage() {
   const handleDeleteClient = async (clientId: string, clientName: string) => {
     console.log("[v0] handleDeleteClient called with:", { clientId, clientName })
 
-    const confirmed = window.confirm(
-      `Tem certeza que deseja excluir o cliente ${clientName}? Esta ação não pode ser desfeita e removerá permanentemente o cliente e todos os seus dados do sistema.`,
-    )
-
-    console.log("[v0] User confirmation:", confirmed)
+    const confirmed = window.confirm(`Tem certeza que deseja excluir o cliente "${clientName}"? Esta ação não pode ser desfeita e todos os dados do cliente (transações, saques, notificações) serão permanentemente removidos.`)
 
     if (!confirmed) {
       console.log("[v0] Delete cancelled by user")
       return
     }
+
+    try {
+      console.log("[v0] Starting delete process for client:", clientId)
+      console.log("[v0] Calling deleteClient from context...")
+      
+      await deleteClient(clientId)
+      
+      console.log("[v0] Delete successful! Client removed from database and auth")
+      toast.success("Cliente excluído com sucesso!")
+      
+      console.log("[v0] Refreshing data...")
+      await refreshData()
+      
+      console.log("[v0] Data refreshed successfully")
+    } catch (error: any) {
+      console.error("[v0] Error in handleDeleteClient:", error)
+      console.error("[v0] Error stack:", error.stack)
+      toast.error(`Erro ao excluir cliente: ${error.message}`)
+    }
+  }
 
     try {
       console.log("[v0] Calling deleteClient from context...")
