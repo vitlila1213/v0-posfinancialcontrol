@@ -51,6 +51,7 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
   const [isLoadingRates, setIsLoadingRates] = useState(false)
   const [success, setSuccess] = useState(false)
   const [isProcessingImage, setIsProcessingImage] = useState(false) // Declare the variable here
+  const [customPlanName, setCustomPlanName] = useState<string>("")
 
   useEffect(() => {
     if (open) {
@@ -162,7 +163,9 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
     }
   }, [grossAmount, brand, paymentType, installments, clientPlan, customRates])
 
-  const planRates = clientPlan ? PLAN_RATES[clientPlan] : null
+  const planRates = clientPlan && (clientPlan === "basic" || clientPlan === "intermediario" || clientPlan === "top") 
+    ? PLAN_RATES[clientPlan] 
+    : null
 
   const handleSubmit = async () => {
     if (!numericAmount || numericAmount <= 0) {
@@ -323,11 +326,30 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
     async function fetchCustomRates() {
       if (!clientPlan || !open) return
 
+      console.log("[v0] Cliente plan detectado:", clientPlan)
+
       // Check if it's a custom plan (UUID format)
       if (clientPlan !== "basic" && clientPlan !== "intermediario" && clientPlan !== "top") {
+        console.log("[v0] É um plano personalizado, buscando taxas...")
         setIsLoadingRates(true)
         try {
           const supabase = createClient()
+          
+          // Fetch custom plan name
+          const { data: planData, error: planError } = await supabase
+            .from("custom_plans")
+            .select("name")
+            .eq("id", clientPlan)
+            .single()
+
+          if (planError) {
+            console.error("[v0] Erro ao buscar nome do plano:", planError)
+          } else if (planData) {
+            console.log("[v0] Nome do plano personalizado:", planData.name)
+            setCustomPlanName(planData.name)
+          }
+
+          // Fetch custom rates
           const { data, error } = await supabase.from("custom_plan_rates").select("*").eq("plan_id", clientPlan)
 
           if (error) {
@@ -335,6 +357,7 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
             setCustomRates([])
           } else {
             console.log("[v0] Taxas personalizadas carregadas para transação:", data)
+            console.log("[v0] Número de taxas encontradas:", data?.length || 0)
             setCustomRates(data || [])
           }
         } catch (err) {
@@ -344,7 +367,9 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
           setIsLoadingRates(false)
         }
       } else {
+        console.log("[v0] É um plano padrão:", clientPlan)
         setCustomRates([])
+        setCustomPlanName("")
       }
     }
 
@@ -447,7 +472,9 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
                   <div>
                     <h2 className="text-base font-semibold text-foreground sm:text-lg">Nova Transação</h2>
                     <p className="text-xs text-muted-foreground sm:text-sm">
-                      Plano {PLAN_NAMES[clientPlan]} • Etapa {step} de 3
+                      Plano {clientPlan === "basic" || clientPlan === "intermediario" || clientPlan === "top" 
+                        ? PLAN_NAMES[clientPlan] 
+                        : customPlanName || "Personalizado"} • Etapa {step} de 3
                     </p>
                     {isRecording && (
                       <motion.p
@@ -536,7 +563,7 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
                                 : "border-white/10 bg-white/5 text-muted-foreground hover:border-white/20",
                             )}
                           >
-                            {planRates?.[b].name || b}
+                            {b === "VISA_MASTER" ? "Visa / Master" : b === "ELO_AMEX" ? "Elo / Amex" : "PIX"}
                           </button>
                         ))}
                       </div>
