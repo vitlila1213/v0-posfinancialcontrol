@@ -345,7 +345,8 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       let feePaymentType: "debit" | "credit" | "pix_qrcode" | "pix_conta"
       
       if (data.brand === "pix") {
-        brandGroup = "PIX" as BrandGroup
+        // Para PIX, usar VISA_MASTER como bandeira padrão para buscar taxas
+        brandGroup = "VISA_MASTER" as BrandGroup
         feePaymentType = data.paymentType as "pix_qrcode" | "pix_conta"
       } else {
         brandGroup = data.brand === "visa_master" ? "VISA_MASTER" : "ELO_AMEX"
@@ -354,12 +355,32 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       
       console.log("[v0] Calculating fee with:", { brandGroup, feePaymentType, plan: profile.plan })
       
+      // Buscar customRates se for plano personalizado
+      let customRates: any[] | undefined
+      const isCustomPlan = profile.plan !== "basic" && profile.plan !== "intermediario" && profile.plan !== "top"
+      
+      if (isCustomPlan) {
+        try {
+          const response = await fetch(`/api/custom-plans/rates?planId=${profile.plan}`)
+          if (response.ok) {
+            const result = await response.json()
+            if (result.success) {
+              customRates = result.rates
+              console.log("[v0] Custom rates loaded:", customRates?.length || 0)
+            }
+          }
+        } catch (error) {
+          console.error("[v0] Error loading custom rates:", error)
+        }
+      }
+      
       const calculation = calculateFee(
         data.grossValue,
         brandGroup,
         feePaymentType as any,
         data.installments as Installments,
         profile.plan,
+        customRates,
       )
       
       console.log("[v0] Calculation result:", calculation)
