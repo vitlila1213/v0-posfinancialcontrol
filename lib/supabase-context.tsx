@@ -724,14 +724,6 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       .filter((t) => t.status !== "rejected" && !t.is_chargeback && !approvedChargebackTxIds.includes(t.id))
       .reduce((sum, t) => sum + t.gross_value, 0)
 
-    console.log("[v0] Balance from database for user:", userId, {
-      available: available.toFixed(2),
-      pending: pending.toFixed(2),
-      withdrawn: withdrawn.toFixed(2),
-      total: total.toFixed(2),
-      source: "profiles.balance (calculated by triggers)",
-    })
-
     return {
       available: Number(Math.max(0, available).toFixed(2)),
       pending: Number(Math.max(0, pending).toFixed(2)),
