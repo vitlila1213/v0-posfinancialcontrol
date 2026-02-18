@@ -221,6 +221,8 @@ export function getCustomPlanRate(
   paymentType: PaymentType,
   installments: Installments = 1,
 ): number | null {
+  console.log("[v0] getCustomPlanRate buscando:", { brandGroup, paymentType, installments, totalRates: rates.length })
+  
   // Buscar taxa específica
   const rate = rates.find((r) => {
     if (r.brand_group !== brandGroup) return false
@@ -235,6 +237,7 @@ export function getCustomPlanRate(
     return r.installments === null
   })
 
+  console.log("[v0] Taxa encontrada:", rate)
   return rate ? rate.rate : null
 }
 
