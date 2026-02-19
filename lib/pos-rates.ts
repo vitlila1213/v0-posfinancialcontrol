@@ -443,9 +443,12 @@ export function calculateChargeValue(
       }
     }
 
+    console.log("[v0] calculateChargeValue - Buscando taxa customizada:", { brandGroup, paymentType, installments, totalRates: customRates.length })
     const customRate = getCustomPlanRate(customRates, brandGroup, paymentType, installments)
+    console.log("[v0] calculateChargeValue - Taxa encontrada:", customRate)
+    
     if (customRate === null) {
-      console.warn("[v0] Taxa não encontrada para plano personalizado")
+      console.warn("[v0] Taxa não encontrada para plano personalizado:", { brandGroup, paymentType, installments })
       return {
         desiredNetAmount,
         feePercentage: 0,
@@ -456,6 +459,7 @@ export function calculateChargeValue(
     feePercentage = customRate
   } else {
     // Plano fixo
+    console.log("[v0] calculateChargeValue - Usando plano fixo:", plan)
     const rates = PLAN_RATES[plan as "basic" | "intermediario" | "top"]
     if (!rates) {
       console.error("[v0] Plano inválido:", plan)
@@ -467,9 +471,10 @@ export function calculateChargeValue(
       }
     }
 
+    console.log("[v0] calculateChargeValue - Buscando bandeira:", brandGroup, "Bandeiras disponíveis:", Object.keys(rates))
     const brandRates = rates[brandGroup]
     if (!brandRates) {
-      console.error("[v0] Bandeira inválida:", brandGroup)
+      console.error("[v0] Bandeira inválida:", brandGroup, "Bandeiras disponíveis:", Object.keys(rates))
       return {
         desiredNetAmount,
         feePercentage: 0,
@@ -478,10 +483,13 @@ export function calculateChargeValue(
       }
     }
 
+    console.log("[v0] calculateChargeValue - brandRates:", brandRates, "paymentType:", paymentType)
     if (paymentType === "pix_conta") {
       feePercentage = (brandRates as any).pix_conta
+      console.log("[v0] calculateChargeValue - PIX Conta taxa:", feePercentage)
     } else if (paymentType === "pix_qrcode") {
       feePercentage = (brandRates as any).pix_qrcode
+      console.log("[v0] calculateChargeValue - PIX QR Code taxa:", feePercentage)
     } else if (paymentType === "debit") {
       feePercentage = (brandRates as any).debit
     } else {
