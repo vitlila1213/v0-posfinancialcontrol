@@ -330,7 +330,10 @@ export function calculateSaleValue(
   plan: PlanType = "top",
   customRates?: CustomPlanRate[],
 ): SaleValueCalculation {
+  console.log("[v0] calculateSaleValue chamada:", { baseAmount, brandGroup, paymentType, installments, plan, customRatesLength: customRates?.length || 0 })
+  
   if (!plan) {
+    console.warn("[v0] calculateSaleValue: Plano não definido")
     return {
       baseAmount,
       feePercentage: 0,
@@ -344,6 +347,7 @@ export function calculateSaleValue(
 
   // Se é plano personalizado (UUID)
   if (plan !== "basic" && plan !== "intermediario" && plan !== "top") {
+    console.log("[v0] calculateSaleValue: Usando plano personalizado")
     if (!customRates || customRates.length === 0) {
       console.warn("[v0] Plano personalizado sem taxas carregadas")
       return {
@@ -355,8 +359,12 @@ export function calculateSaleValue(
       }
     }
 
+    console.log("[v0] Buscando taxa customizada:", { brandGroup, paymentType, installments })
     const customRate = getCustomPlanRate(customRates, brandGroup, paymentType, installments)
+    console.log("[v0] Taxa customizada encontrada:", customRate)
+    
     if (customRate === null) {
+      console.warn("[v0] Taxa não encontrada para plano personalizado")
       return {
         baseAmount,
         feePercentage: 0,
@@ -368,8 +376,10 @@ export function calculateSaleValue(
     feePercentage = customRate
   } else {
     // Plano fixo
+    console.log("[v0] calculateSaleValue: Usando plano fixo:", plan)
     const rates = PLAN_RATES[plan as "basic" | "intermediario" | "top"]
     if (!rates) {
+      console.error("[v0] Plano inválido:", plan)
       return {
         baseAmount,
         feePercentage: 0,
@@ -379,8 +389,10 @@ export function calculateSaleValue(
       }
     }
 
+    console.log("[v0] Bandeiras disponíveis:", Object.keys(rates))
     const brandRates = rates[brandGroup]
     if (!brandRates) {
+      console.error("[v0] Bandeira inválida:", brandGroup, "Disponíveis:", Object.keys(rates))
       return {
         baseAmount,
         feePercentage: 0,

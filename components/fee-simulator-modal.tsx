@@ -135,14 +135,26 @@ export function FeeSimulatorModal({ open, onOpenChange }: FeeSimulatorModalProps
 
   const saleCalculationPix =
     grossValue && clientPlan && mode === "sale" && isPix
-      ? calculateSaleValue(
-          Number.parseFloat(grossValue),
-          "PIX",
-          paymentType,
-          installments as any,
-          clientPlan,
-          customRates.length > 0 ? customRates : undefined,
-        )
+      ? (() => {
+          console.log("[v0] Calculando Valor da Venda PIX:", {
+            valor: Number.parseFloat(grossValue),
+            bandeira: "PIX",
+            tipoPagamento: paymentType,
+            plano: clientPlan,
+            temTaxasPersonalizadas: customRates.length > 0,
+            totalTaxas: customRates.length,
+          })
+          const result = calculateSaleValue(
+            Number.parseFloat(grossValue),
+            "PIX",
+            paymentType,
+            installments as any,
+            clientPlan,
+            customRates.length > 0 ? customRates : undefined,
+          )
+          console.log("[v0] Resultado PIX:", result)
+          return result
+        })()
       : null
 
   if (!open) return null
