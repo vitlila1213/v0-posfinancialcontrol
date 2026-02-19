@@ -330,7 +330,10 @@ export function calculateSaleValue(
   plan: PlanType = "top",
   customRates?: CustomPlanRate[],
 ): SaleValueCalculation {
+  console.log("[v0] calculateSaleValue chamada:", { baseAmount, brandGroup, paymentType, installments, plan, customRatesLength: customRates?.length || 0 })
+  
   if (!plan) {
+    console.warn("[v0] calculateSaleValue: Plano não definido")
     return {
       baseAmount,
       feePercentage: 0,
@@ -344,6 +347,7 @@ export function calculateSaleValue(
 
   // Se é plano personalizado (UUID)
   if (plan !== "basic" && plan !== "intermediario" && plan !== "top") {
+    console.log("[v0] calculateSaleValue: Usando plano personalizado")
     if (!customRates || customRates.length === 0) {
       console.warn("[v0] Plano personalizado sem taxas carregadas")
       return {
@@ -355,8 +359,12 @@ export function calculateSaleValue(
       }
     }
 
+    console.log("[v0] Buscando taxa customizada:", { brandGroup, paymentType, installments })
     const customRate = getCustomPlanRate(customRates, brandGroup, paymentType, installments)
+    console.log("[v0] Taxa customizada encontrada:", customRate)
+    
     if (customRate === null) {
+      console.warn("[v0] Taxa não encontrada para plano personalizado")
       return {
         baseAmount,
         feePercentage: 0,
@@ -368,8 +376,10 @@ export function calculateSaleValue(
     feePercentage = customRate
   } else {
     // Plano fixo
+    console.log("[v0] calculateSaleValue: Usando plano fixo:", plan)
     const rates = PLAN_RATES[plan as "basic" | "intermediario" | "top"]
     if (!rates) {
+      console.error("[v0] Plano inválido:", plan)
       return {
         baseAmount,
         feePercentage: 0,
@@ -379,8 +389,10 @@ export function calculateSaleValue(
       }
     }
 
+    console.log("[v0] Bandeiras disponíveis:", Object.keys(rates))
     const brandRates = rates[brandGroup]
     if (!brandRates) {
+      console.error("[v0] Bandeira inválida:", brandGroup, "Disponíveis:", Object.keys(rates))
       return {
         baseAmount,
         feePercentage: 0,
@@ -443,9 +455,12 @@ export function calculateChargeValue(
       }
     }
 
+    console.log("[v0] calculateChargeValue - Buscando taxa customizada:", { brandGroup, paymentType, installments, totalRates: customRates.length })
     const customRate = getCustomPlanRate(customRates, brandGroup, paymentType, installments)
+    console.log("[v0] calculateChargeValue - Taxa encontrada:", customRate)
+    
     if (customRate === null) {
-      console.warn("[v0] Taxa não encontrada para plano personalizado")
+      console.warn("[v0] Taxa não encontrada para plano personalizado:", { brandGroup, paymentType, installments })
       return {
         desiredNetAmount,
         feePercentage: 0,
@@ -456,6 +471,7 @@ export function calculateChargeValue(
     feePercentage = customRate
   } else {
     // Plano fixo
+    console.log("[v0] calculateChargeValue - Usando plano fixo:", plan)
     const rates = PLAN_RATES[plan as "basic" | "intermediario" | "top"]
     if (!rates) {
       console.error("[v0] Plano inválido:", plan)
@@ -467,9 +483,10 @@ export function calculateChargeValue(
       }
     }
 
+    console.log("[v0] calculateChargeValue - Buscando bandeira:", brandGroup, "Bandeiras disponíveis:", Object.keys(rates))
     const brandRates = rates[brandGroup]
     if (!brandRates) {
-      console.error("[v0] Bandeira inválida:", brandGroup)
+      console.error("[v0] Bandeira inválida:", brandGroup, "Bandeiras disponíveis:", Object.keys(rates))
       return {
         desiredNetAmount,
         feePercentage: 0,
@@ -478,10 +495,13 @@ export function calculateChargeValue(
       }
     }
 
+    console.log("[v0] calculateChargeValue - brandRates:", brandRates, "paymentType:", paymentType)
     if (paymentType === "pix_conta") {
       feePercentage = (brandRates as any).pix_conta
+      console.log("[v0] calculateChargeValue - PIX Conta taxa:", feePercentage)
     } else if (paymentType === "pix_qrcode") {
       feePercentage = (brandRates as any).pix_qrcode
+      console.log("[v0] calculateChargeValue - PIX QR Code taxa:", feePercentage)
     } else if (paymentType === "debit") {
       feePercentage = (brandRates as any).debit
     } else {
