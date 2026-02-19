@@ -106,8 +106,11 @@ export function FeeSimulatorModal({ open, onOpenChange }: FeeSimulatorModalProps
         })()
       : null
 
+  // Para PIX, não precisa calcular por bandeiras de cartão
+  const isPix = paymentType === "pix_conta" || paymentType === "pix_qrcode"
+
   const saleCalculationVisa =
-    grossValue && clientPlan && mode === "sale"
+    grossValue && clientPlan && mode === "sale" && !isPix
       ? calculateSaleValue(
           Number.parseFloat(grossValue),
           "VISA_MASTER",
@@ -119,10 +122,22 @@ export function FeeSimulatorModal({ open, onOpenChange }: FeeSimulatorModalProps
       : null
 
   const saleCalculationElo =
-    grossValue && clientPlan && mode === "sale"
+    grossValue && clientPlan && mode === "sale" && !isPix
       ? calculateSaleValue(
           Number.parseFloat(grossValue),
           "ELO_AMEX",
+          paymentType,
+          installments as any,
+          clientPlan,
+          customRates.length > 0 ? customRates : undefined,
+        )
+      : null
+
+  const saleCalculationPix =
+    grossValue && clientPlan && mode === "sale" && isPix
+      ? calculateSaleValue(
+          Number.parseFloat(grossValue),
+          "PIX",
           paymentType,
           installments as any,
           clientPlan,
@@ -399,6 +414,33 @@ export function FeeSimulatorModal({ open, onOpenChange }: FeeSimulatorModalProps
                 </motion.div>
               )}
 
+              {/* Resultado para PIX */}
+              {mode === "sale" && saleCalculationPix && (
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+                  <div className="space-y-3 rounded-xl border border-emerald-500/30 bg-gradient-to-br from-emerald-500/10 to-green-500/10 p-4">
+                    <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                      <span className="font-semibold text-emerald-400">PIX</span>
+                      <span className="text-xs text-muted-foreground">
+                        Taxa: {formatPercentage(saleCalculationPix.feePercentage)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Valor do Produto</span>
+                      <span className="font-medium text-foreground">
+                        {formatCurrency(saleCalculationPix.baseAmount)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Total com Taxas</span>
+                      <span className="font-semibold text-emerald-400">
+                        {formatCurrency(saleCalculationPix.totalAmount)}
+                      </span>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* Resultado para Cartões */}
               {mode === "sale" && saleCalculationVisa && saleCalculationElo && (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
                   {/* Visa / Mastercard */}
