@@ -89,7 +89,10 @@ export default function ClientSignupPage() {
       if (signUpError) throw signUpError
 
       if (signUpData.user) {
-        console.log("[v0] ✅ Usuário criado com sucesso, ID:", signUpData.user.id)
+        console.log("[v0] ✅ Usuário criado com sucesso!")
+        console.log("[v0] User ID:", signUpData.user.id)
+        console.log("[v0] User Email:", signUpData.user.email)
+        console.log("[v0] User metadata:", signUpData.user.user_metadata)
         console.log("[v0] 📝 Marcando código como usado via API:", accessCode.trim().toUpperCase())
 
         try {
@@ -112,6 +115,11 @@ export default function ClientSignupPage() {
         } catch (apiError) {
           console.error("[v0] ❌ Erro ao chamar API:", apiError)
         }
+
+        // Aguardar um pouco para o trigger criar o perfil
+        console.log("[v0] ⏳ Aguardando criação do perfil via trigger...")
+        await new Promise(resolve => setTimeout(resolve, 2000))
+        console.log("[v0] ✅ Perfil deve ter sido criado pelo trigger")
       }
 
       sessionStorage.setItem("pendingEmail", email)

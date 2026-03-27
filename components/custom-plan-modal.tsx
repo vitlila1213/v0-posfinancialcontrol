@@ -22,11 +22,13 @@ export function CustomPlanModal({ editingPlan, onClose, onSuccess }: CustomPlanM
   const [planName, setPlanName] = useState("")
   const [error, setError] = useState<string | null>(null)
 
+  // Taxas PIX (independentes)
+  const [pixConta, setPixConta] = useState("0.50")
+  const [pixQr, setPixQr] = useState("1.00")
+
   // Taxas Visa/Master
   const [vmDebit, setVmDebit] = useState("1.99")
   const [vmCredit1x, setVmCredit1x] = useState("3.99")
-  const [vmPixConta, setVmPixConta] = useState("0.50")
-  const [vmPixQr, setVmPixQr] = useState("1.00")
   const [vmInstallments, setVmInstallments] = useState<Record<number, string>>({
     2: "4.83",
     3: "5.48",
@@ -50,8 +52,6 @@ export function CustomPlanModal({ editingPlan, onClose, onSuccess }: CustomPlanM
   // Taxas Elo/Amex
   const [eaDebit, setEaDebit] = useState("3.10")
   const [eaCredit1x, setEaCredit1x] = useState("5.19")
-  const [eaPixConta, setEaPixConta] = useState("0.50")
-  const [eaPixQr, setEaPixQr] = useState("1.00")
   const [eaInstallments, setEaInstallments] = useState<Record<number, string>>({
     2: "6.37",
     3: "7.02",
@@ -84,19 +84,22 @@ export function CustomPlanModal({ editingPlan, onClose, onSuccess }: CustomPlanM
 
       if (!rates) return
 
-      // Populate Visa/Master rates
+      // Populate rates by brand_group
       rates.forEach((rate) => {
-        if (rate.brand_group === "VISA_MASTER") {
+        if (rate.brand_group === "PIX") {
+          // PIX é independente
+          if (rate.payment_type === "pix_conta") {
+            setPixConta(rate.rate.toString())
+          } else if (rate.payment_type === "pix_qrcode") {
+            setPixQr(rate.rate.toString())
+          }
+        } else if (rate.brand_group === "VISA_MASTER") {
           if (rate.payment_type === "debit") {
             setVmDebit(rate.rate.toString())
           } else if (rate.payment_type === "credit" && rate.installments === 1) {
             setVmCredit1x(rate.rate.toString())
           } else if (rate.payment_type === "credit" && rate.installments) {
             setVmInstallments((prev) => ({ ...prev, [rate.installments!]: rate.rate.toString() }))
-          } else if (rate.payment_type === "pix_conta") {
-            setVmPixConta(rate.rate.toString())
-          } else if (rate.payment_type === "pix_qrcode") {
-            setVmPixQr(rate.rate.toString())
           }
         } else if (rate.brand_group === "ELO_AMEX") {
           if (rate.payment_type === "debit") {
@@ -105,10 +108,6 @@ export function CustomPlanModal({ editingPlan, onClose, onSuccess }: CustomPlanM
             setEaCredit1x(rate.rate.toString())
           } else if (rate.payment_type === "credit" && rate.installments) {
             setEaInstallments((prev) => ({ ...prev, [rate.installments!]: rate.rate.toString() }))
-          } else if (rate.payment_type === "pix_conta") {
-            setEaPixConta(rate.rate.toString())
-          } else if (rate.payment_type === "pix_qrcode") {
-            setEaPixQr(rate.rate.toString())
           }
         }
       })
@@ -128,37 +127,23 @@ export function CustomPlanModal({ editingPlan, onClose, onSuccess }: CustomPlanM
 
     try {
       const ratesData = [
-        // Visa/Master
+        // PIX (independente de bandeira)
+        { brand_group: "PIX", payment_type: "pix_conta", installments: null, rate: Number.parseFloat(pixConta) },
+        { brand_group: "PIX", payment_type: "pix_qrcode", installments: null, rate: Number.parseFloat(pixQr) },
+        
+        // Visa/Master (apenas cartão)
         { brand_group: "VISA_MASTER", payment_type: "debit", installments: null, rate: Number.parseFloat(vmDebit) },
         { brand_group: "VISA_MASTER", payment_type: "credit", installments: 1, rate: Number.parseFloat(vmCredit1x) },
-        {
-          brand_group: "VISA_MASTER",
-          payment_type: "pix_conta",
-          installments: null,
-          rate: Number.parseFloat(vmPixConta),
-        },
-        {
-          brand_group: "VISA_MASTER",
-          payment_type: "pix_qrcode",
-          installments: null,
-          rate: Number.parseFloat(vmPixQr),
-        },
         ...Object.entries(vmInstallments).map(([inst, rate]) => ({
           brand_group: "VISA_MASTER" as const,
           payment_type: "credit" as const,
           installments: Number.parseInt(inst),
           rate: Number.parseFloat(rate),
         })),
-        // Elo/Amex
+        
+        // Elo/Amex (apenas cartão)
         { brand_group: "ELO_AMEX", payment_type: "debit", installments: null, rate: Number.parseFloat(eaDebit) },
         { brand_group: "ELO_AMEX", payment_type: "credit", installments: 1, rate: Number.parseFloat(eaCredit1x) },
-        {
-          brand_group: "ELO_AMEX",
-          payment_type: "pix_conta",
-          installments: null,
-          rate: Number.parseFloat(eaPixConta),
-        },
-        { brand_group: "ELO_AMEX", payment_type: "pix_qrcode", installments: null, rate: Number.parseFloat(eaPixQr) },
         ...Object.entries(eaInstallments).map(([inst, rate]) => ({
           brand_group: "ELO_AMEX" as const,
           payment_type: "credit" as const,
@@ -246,6 +231,35 @@ export function CustomPlanModal({ editingPlan, onClose, onSuccess }: CustomPlanM
               />
             </div>
 
+            {/* PIX - Independente */}
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4">
+              <h3 className="mb-4 text-lg font-semibold text-foreground">PIX</h3>
+              <p className="mb-4 text-xs text-muted-foreground">PIX não é transação de cartão, portanto tem taxas independentes</p>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>PIX Conta (%)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={pixConta}
+                    onChange={(e) => setPixConta(e.target.value)}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label>PIX QR Code (%)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={pixQr}
+                    onChange={(e) => setPixQr(e.target.value)}
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+            </div>
+
             {/* Visa/Master */}
             <div className="rounded-xl border border-white/10 bg-white/5 p-4">
               <h3 className="mb-4 text-lg font-semibold text-foreground">Visa / Mastercard</h3>
@@ -268,26 +282,6 @@ export function CustomPlanModal({ editingPlan, onClose, onSuccess }: CustomPlanM
                     step="0.01"
                     value={vmCredit1x}
                     onChange={(e) => setVmCredit1x(e.target.value)}
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label>PIX Conta (%)</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={vmPixConta}
-                    onChange={(e) => setVmPixConta(e.target.value)}
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label>PIX QR Code (%)</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={vmPixQr}
-                    onChange={(e) => setVmPixQr(e.target.value)}
                     className="mt-1"
                   />
                 </div>
@@ -331,26 +325,6 @@ export function CustomPlanModal({ editingPlan, onClose, onSuccess }: CustomPlanM
                     step="0.01"
                     value={eaCredit1x}
                     onChange={(e) => setEaCredit1x(e.target.value)}
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label>PIX Conta (%)</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={eaPixConta}
-                    onChange={(e) => setEaPixConta(e.target.value)}
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label>PIX QR Code (%)</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={eaPixQr}
-                    onChange={(e) => setEaPixQr(e.target.value)}
                     className="mt-1"
                   />
                 </div>

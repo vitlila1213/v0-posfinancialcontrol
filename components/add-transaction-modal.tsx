@@ -51,6 +51,7 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
   const [isLoadingRates, setIsLoadingRates] = useState(false)
   const [success, setSuccess] = useState(false)
   const [isProcessingImage, setIsProcessingImage] = useState(false) // Declare the variable here
+  const [customPlanName, setCustomPlanName] = useState<string>("")
 
   useEffect(() => {
     if (open) {
@@ -123,28 +124,89 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
 
   const clientPlan = profile?.plan
   const numericAmount = Number.parseFloat(grossAmount) || 0
+  const isCustomPlan = clientPlan && clientPlan !== "basic" && clientPlan !== "intermediario" && clientPlan !== "top"
+  
   const calculation = useMemo(() => {
-    if (!grossAmount || !clientPlan) return null
+    if (!grossAmount || !clientPlan) {
+      console.log("[v0] Calculation skipped: missing grossAmount or clientPlan")
+      return null
+    }
+    
+    // Se é plano personalizado e ainda está carregando as taxas, retornar null
+    if (isCustomPlan && isLoadingRates) {
+      console.log("[v0] Calculation skipped: loading custom rates")
+      return null
+    }
+    
+    // Se é plano personalizado e não tem taxas carregadas, retornar null
+    if (isCustomPlan && customRates.length === 0) {
+      console.log("[v0] Calculation skipped: no custom rates loaded for custom plan")
+      return null
+    }
+    
     const amount = Number.parseFloat(grossAmount)
-    if (isNaN(amount)) return null
+    if (isNaN(amount) || amount <= 0) {
+      console.log("[v0] Calculation skipped: invalid amount")
+      return null
+    }
 
-    console.log("[v0] Calculating fee with:", { amount, brand, paymentType, installments, clientPlan })
-    const result = calculateFee(
-      amount,
-      brand,
-      paymentType,
-      installments,
-      clientPlan,
-      customRates.length > 0 ? customRates : undefined,
-    )
-    console.log("[v0] Calculation result:", result)
-    return result
-  }, [grossAmount, brand, paymentType, installments, clientPlan, customRates])
+    try {
+      // PIX agora é um brand_group independente
+      console.log("[v0] Calculating fee with:", { 
+        amount, 
+        brand, 
+        paymentType, 
+        installments, 
+        clientPlan,
+        isCustomPlan,
+        customRatesCount: customRates.length 
+      })
+      
+      // Validação de paymentType para PIX
+      let finalPaymentType: "debit" | "credit" | "pix_qrcode" | "pix_conta"
+      if (brand === "PIX") {
+        finalPaymentType = paymentType === "pix_qrcode" ? "pix_qrcode" : "pix_conta"
+      } else {
+        finalPaymentType = paymentType === "debit" ? "debit" : "credit"
+      }
+      
+      const result = calculateFee(
+        amount,
+        brand,
+        finalPaymentType,
+        installments,
+        clientPlan,
+        isCustomPlan ? customRates : undefined,
+      )
+      console.log("[v0] Calculation result:", result)
+      
+      // Validar resultado
+      if (!result || result.grossAmount === undefined || result.netAmount === undefined) {
+        console.error("[v0] Invalid calculation result:", result)
+        return null
+      }
+      
+      return result
+    } catch (err) {
+      console.error("[v0] Error calculating fee:", err)
+      return null
+    }
+  }, [grossAmount, brand, paymentType, installments, clientPlan, customRates, isCustomPlan, isLoadingRates])
 
-  const planRates = clientPlan ? PLAN_RATES[clientPlan] : null
+  const planRates = clientPlan && (clientPlan === "basic" || clientPlan === "intermediario" || clientPlan === "top") 
+    ? PLAN_RATES[clientPlan] 
+    : null
 
   const handleSubmit = async () => {
-    if (!numericAmount || numericAmount <= 0) return
+    if (!numericAmount || numericAmount <= 0) {
+      setError("Por favor, insira um valor válido")
+      return
+    }
+
+    if (!clientPlan) {
+      setError("Plano não atribuído. Entre em contato com o gestor.")
+      return
+    }
 
     setIsSubmitting(true)
     setError(null)
@@ -158,10 +220,18 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
         clientPlan,
       })
 
+      // Validação de paymentType para PIX
+      let finalPaymentType: "debit" | "credit" | "pix_qrcode" | "pix_conta"
+      if (brand === "PIX") {
+        finalPaymentType = paymentType === "pix_qrcode" ? "pix_qrcode" : "pix_conta"
+      } else {
+        finalPaymentType = paymentType === "debit" ? "debit" : "credit"
+      }
+
       const feeCalculation = calculateFee(
         numericAmount,
         brand,
-        paymentType === "pix_qrcode" ? "pix_qrcode" : paymentType === "pix_conta" ? "pix_conta" : paymentType,
+        finalPaymentType,
         installments,
         clientPlan,
         customRates.length > 0 ? customRates : undefined,
@@ -169,22 +239,29 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
 
       console.log("[v0] Fee calculation result:", feeCalculation)
 
+      // Validação dos resultados do cálculo
+      if (!feeCalculation || feeCalculation.grossAmount === undefined || feeCalculation.netAmount === undefined) {
+        throw new Error("Erro ao calcular taxas. Verifique os dados inseridos.")
+      }
+
       await addTransaction({
         grossValue: feeCalculation.grossAmount,
         brand: brand === "PIX" ? "pix" : brand === "VISA_MASTER" ? "visa_master" : "elo_amex",
-        paymentType:
-          paymentType === "pix_qrcode" ? "pix_qrcode" : paymentType === "pix_conta" ? "pix_conta" : paymentType,
+        paymentType: finalPaymentType,
         installments,
         receiptFile: receiptFile || undefined,
         noReceiptReason: !receiptFile && noReceiptReason ? noReceiptReason : undefined,
       })
 
+      toast.success("Transação adicionada com sucesso!")
       handleClose()
       setSuccess(true)
       setTimeout(() => setSuccess(false), 3000)
     } catch (err) {
       console.error("[v0] Erro ao adicionar transação:", err)
-      setError(err instanceof Error ? err.message : "Erro ao adicionar transação")
+      const errorMessage = err instanceof Error ? err.message : "Erro ao adicionar transação"
+      setError(errorMessage)
+      toast.error(errorMessage)
     } finally {
       setIsSubmitting(false)
     }
@@ -279,28 +356,46 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
     async function fetchCustomRates() {
       if (!clientPlan || !open) return
 
+      console.log("[v0] Cliente plan detectado:", clientPlan)
+
       // Check if it's a custom plan (UUID format)
       if (clientPlan !== "basic" && clientPlan !== "intermediario" && clientPlan !== "top") {
+        console.log("[v0] É um plano personalizado, buscando taxas via API...")
         setIsLoadingRates(true)
         try {
-          const supabase = createClient()
-          const { data, error } = await supabase.from("custom_plan_rates").select("*").eq("plan_id", clientPlan)
-
-          if (error) {
-            console.error("[v0] Erro ao buscar taxas personalizadas:", error)
+          // Buscar taxas através da API server-side ao invés de client-side
+          const response = await fetch(`/api/custom-plans/rates?planId=${clientPlan}`)
+          
+          if (!response.ok) {
+            console.error("[v0] Erro na resposta da API:", response.status)
             setCustomRates([])
+            setCustomPlanName("")
+            return
+          }
+
+          const result = await response.json()
+          
+          if (result.success) {
+            console.log("[v0] Nome do plano personalizado:", result.planName)
+            console.log("[v0] Taxas personalizadas carregadas:", result.rates?.length || 0)
+            setCustomPlanName(result.planName)
+            setCustomRates(result.rates || [])
           } else {
-            console.log("[v0] Taxas personalizadas carregadas para transação:", data)
-            setCustomRates(data || [])
+            console.error("[v0] API retornou erro:", result.error)
+            setCustomRates([])
+            setCustomPlanName("")
           }
         } catch (err) {
-          console.error("[v0] Erro ao buscar taxas:", err)
+          console.error("[v0] Erro ao buscar taxas via API:", err)
           setCustomRates([])
+          setCustomPlanName("")
         } finally {
           setIsLoadingRates(false)
         }
       } else {
+        console.log("[v0] É um plano padrão:", clientPlan)
         setCustomRates([])
+        setCustomPlanName("")
       }
     }
 
@@ -403,7 +498,9 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
                   <div>
                     <h2 className="text-base font-semibold text-foreground sm:text-lg">Nova Transação</h2>
                     <p className="text-xs text-muted-foreground sm:text-sm">
-                      Plano {PLAN_NAMES[clientPlan]} • Etapa {step} de 3
+                      Plano {clientPlan === "basic" || clientPlan === "intermediario" || clientPlan === "top" 
+                        ? PLAN_NAMES[clientPlan] 
+                        : customPlanName || "Personalizado"} • Etapa {step} de 3
                     </p>
                     {isRecording && (
                       <motion.p
@@ -459,6 +556,38 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
                     exit={{ opacity: 0, x: -20 }}
                     className="space-y-3 sm:space-y-4"
                   >
+                    {isCustomPlan && isLoadingRates && (
+                      <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-3">
+                        <div className="flex items-center gap-2 text-xs text-blue-400 sm:text-sm">
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-400 border-t-transparent" />
+                          <span>Carregando taxas do plano {customPlanName}...</span>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {isCustomPlan && !isLoadingRates && customRates.length === 0 && (
+                      <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="text-xs text-rose-400 sm:text-sm">
+                            Não foi possível carregar as taxas do plano {customPlanName || "personalizado"}. As taxas estão salvas no banco, mas houve um erro ao carregá-las.
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              console.log("[v0] Tentando recarregar taxas...")
+                              setIsLoadingRates(true)
+                              // Força um reload fechando e reabrindo o modal ou recarregando a página
+                              window.location.reload()
+                            }}
+                            className="shrink-0 border-rose-400/30 text-rose-400 hover:bg-rose-500/20"
+                          >
+                            Recarregar
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                    
                     <div>
                       <Label className="text-xs text-muted-foreground sm:text-sm">Valor Bruto (R$)</Label>
                       <Input
@@ -492,7 +621,7 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
                                 : "border-white/10 bg-white/5 text-muted-foreground hover:border-white/20",
                             )}
                           >
-                            {planRates?.[b].name || b}
+                            {b === "VISA_MASTER" ? "Visa / Master" : b === "ELO_AMEX" ? "Elo / Amex" : "PIX"}
                           </button>
                         ))}
                       </div>
@@ -598,9 +727,26 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
                     exit={{ opacity: 0, x: -20 }}
                     className="space-y-4"
                   >
+                    {isLoadingRates && isCustomPlan && (
+                      <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-4">
+                        <div className="flex items-center gap-2 text-sm text-blue-400">
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-400 border-t-transparent" />
+                          <span>Carregando taxas do plano personalizado...</span>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {!isLoadingRates && isCustomPlan && customRates.length === 0 && (
+                      <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4">
+                        <div className="text-sm text-rose-400">
+                          Não foi possível carregar as taxas do plano personalizado. Por favor, tente novamente.
+                        </div>
+                      </div>
+                    )}
+                    
                     {calculation &&
                       calculation.grossAmount !== undefined &&
-                      calculation.fee !== undefined &&
+                      calculation.feeAmount !== undefined &&
                       calculation.netAmount !== undefined && (
                         <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4">
                           <div className="space-y-2">
@@ -611,8 +757,8 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
                               </span>
                             </div>
                             <div className="flex justify-between text-sm">
-                              <span className="text-muted-foreground">Taxa ({calculation.rate}%):</span>
-                              <span className="font-semibold text-rose-500">- R$ {calculation.fee.toFixed(2)}</span>
+                              <span className="text-muted-foreground">Taxa ({calculation.feePercentage.toFixed(2)}%):</span>
+                              <span className="font-semibold text-rose-500">- R$ {calculation.feeAmount.toFixed(2)}</span>
                             </div>
                             <div className="h-px bg-white/10" />
                             <div className="flex justify-between">
@@ -780,15 +926,18 @@ export function AddTransactionModal({ open, onOpenChange }: AddTransactionModalP
                   </Button>
                 )}
 
-                {step < 3 ? (
-                  <Button
-                    onClick={() => setStep(step + 1)}
-                    disabled={step === 1 && !numericAmount}
-                    className="flex-1 bg-emerald-500 text-xs text-white hover:bg-emerald-600 sm:text-sm"
-                  >
-                    Continuar
-                    <ArrowRight className="ml-1.5 h-3.5 w-3.5 sm:ml-2 sm:h-4 sm:w-4" />
-                  </Button>
+                  {step < 3 ? (
+                    <Button
+                      onClick={() => setStep(step + 1)}
+                      disabled={
+                        (step === 1 && !numericAmount) ||
+                        (step === 1 && isCustomPlan && (isLoadingRates || customRates.length === 0))
+                      }
+                      className="flex-1 bg-emerald-500 text-xs text-white hover:bg-emerald-600 sm:text-sm"
+                    >
+                      {step === 1 && isCustomPlan && isLoadingRates ? "Carregando..." : "Continuar"}
+                      <ArrowRight className="ml-1.5 h-3.5 w-3.5 sm:ml-2 sm:h-4 sm:w-4" />
+                    </Button>
                 ) : (
                   <Button
                     onClick={handleSubmit}

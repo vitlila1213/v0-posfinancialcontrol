@@ -4,31 +4,49 @@
 -- Criar função que será executada pelo trigger
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
+DECLARE
+  v_role TEXT;
 BEGIN
+  -- Extrair o role do metadata, default para 'client'
+  v_role := COALESCE(NEW.raw_user_meta_data->>'role', 'client');
+  
+  -- Log para debug
+  RAISE NOTICE 'Creating profile for user %, role: %', NEW.id, v_role;
+  
   INSERT INTO public.profiles (
     id,
     email,
     full_name,
     phone,
     role,
-    plan
+    plan,
+    balance,
+    pending_balance
   )
   VALUES (
     NEW.id,
     NEW.email,
     COALESCE(NEW.raw_user_meta_data->>'full_name', ''),
     COALESCE(NEW.raw_user_meta_data->>'phone', ''),
-    COALESCE(NEW.raw_user_meta_data->>'role', 'client'),
-    NULL  -- Plano começa como NULL
-  );
+    v_role,
+    NULL,  -- Plano começa como NULL
+    0.00,  -- Balance inicial
+    0.00   -- Pending balance inicial
+  )
+  ON CONFLICT (id) DO UPDATE
+  SET
+    email = EXCLUDED.email,
+    full_name = COALESCE(EXCLUDED.full_name, profiles.full_name),
+    phone = COALESCE(EXCLUDED.phone, profiles.phone),
+    role = COALESCE(EXCLUDED.role, profiles.role),
+    updated_at = NOW();
+    
+  RAISE NOTICE 'Profile created successfully for user %', NEW.id;
   RETURN NEW;
 EXCEPTION
-  WHEN unique_violation THEN
-    -- Se o perfil já existe, apenas retorna NEW sem erro
-    RETURN NEW;
   WHEN OTHERS THEN
     -- Log do erro mas não falha o signup
-    RAISE WARNING 'Error creating profile for user %: %', NEW.id, SQLERRM;
+    RAISE WARNING 'Error creating profile for user %: % - %', NEW.id, SQLERRM, SQLSTATE;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

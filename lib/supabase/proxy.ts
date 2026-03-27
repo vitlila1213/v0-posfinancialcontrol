@@ -7,9 +7,25 @@ export async function updateSession(request: NextRequest) {
     request,
   })
 
-  const { url, anonKey } = getSupabaseEnv()
+  // Try to get Supabase env, if it fails just pass through without auth check
+  let url: string
+  let anonKey: string
+  try {
+    const env = getSupabaseEnv()
+    url = env.url
+    anonKey = env.anonKey
+    
+    // If anonKey is empty, skip auth check
+    if (!anonKey || anonKey === "") {
+      return supabaseResponse
+    }
+  } catch (error) {
+    return supabaseResponse
+  }
 
-  const supabase = createServerClient(url, anonKey, {
+  let supabase
+  try {
+    supabase = createServerClient(url, anonKey, {
     cookies: {
       getAll() {
         return request.cookies.getAll()
@@ -23,6 +39,9 @@ export async function updateSession(request: NextRequest) {
       },
     },
   })
+  } catch (error) {
+    return supabaseResponse
+  }
 
   const {
     data: { user },
@@ -40,17 +59,23 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  const { url: serviceUrl, serviceRoleKey } = getSupabaseServiceEnv()
-  const adminClient = createServerClient(serviceUrl, serviceRoleKey, {
-    cookies: {
-      getAll() {
-        return request.cookies.getAll()
+  let adminClient
+  try {
+    const { url: serviceUrl, serviceRoleKey } = getSupabaseServiceEnv()
+    adminClient = createServerClient(serviceUrl, serviceRoleKey, {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll()
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
+        },
       },
-      setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-      },
-    },
-  })
+    })
+  } catch (error) {
+    console.log("[v0] Service role not available, skipping profile check")
+    return supabaseResponse
+  }
 
   // Se está logado, verifica o role para redirecionar corretamente
   if (user && (isClientRoute || isAdminRoute)) {

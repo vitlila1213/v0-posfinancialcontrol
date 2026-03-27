@@ -22,7 +22,13 @@ export default function ClientLoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [showForgotPassword, setShowForgotPassword] = useState(false)
   const [resetEmail, setResetEmail] = useState("")
+  const [newPassword, setNewPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [showNewPassword, setShowNewPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [isResetting, setIsResetting] = useState(false)
+  const [emailVerified, setEmailVerified] = useState(false)
+  const [isVerifyingEmail, setIsVerifyingEmail] = useState(false)
   const router = useRouter()
   const { toast } = useToast()
 
@@ -62,32 +68,135 @@ export default function ClientLoginPage() {
     }
   }
 
-  const handleForgotPassword = async (e: React.FormEvent) => {
+  const handleVerifyEmail = async (e: React.FormEvent) => {
     e.preventDefault()
-    const supabase = createClient()
-    setIsResetting(true)
+    
+    console.log("[v0] Verificando email:", resetEmail)
+    
+    if (!resetEmail || resetEmail.trim() === "") {
+      toast({
+        title: "Erro",
+        description: "Por favor, digite um e-mail válido.",
+        variant: "destructive",
+      })
+      return
+    }
+    
+    setIsVerifyingEmail(true)
 
     try {
-      const redirectUrl = "https://v0-posfinancialcontrol-aq.vercel.app/auth/callback?next=/auth/client/update-password"
-
-      console.log("[v0] Sending password reset to:", resetEmail, "with redirect:", redirectUrl)
-
-      const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
-        redirectTo: redirectUrl,
+      console.log("[v0] Chamando API de verificação...")
+      
+      // Chamar API para verificar se o email existe
+      const response = await fetch("/api/auth/verify-email", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email: resetEmail }),
       })
 
-      if (error) throw error
+      const result = await response.json()
+      console.log("[v0] Resposta da API:", result)
+
+      if (!response.ok || !result.success) {
+        console.log("[v0] Email não encontrado")
+        toast({
+          title: "Email não encontrado",
+          description: "Este e-mail não está cadastrado no sistema.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      // Email encontrado, mostrar campos de nova senha
+      console.log("[v0] Email verificado com sucesso!")
+      setEmailVerified(true)
+      toast({
+        title: "Email verificado!",
+        description: "Agora você pode definir uma nova senha.",
+      })
+    } catch (err: unknown) {
+      console.log("[v0] Erro ao verificar email:", err)
+      toast({
+        title: "Erro",
+        description: err instanceof Error ? err.message : "Erro ao verificar email",
+        variant: "destructive",
+      })
+    } finally {
+      setIsVerifyingEmail(false)
+    }
+  }
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    if (newPassword !== confirmPassword) {
+      toast({
+        title: "Erro",
+        description: "As senhas não coincidem",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (newPassword.length < 6) {
+      toast({
+        title: "Erro",
+        description: "A senha deve ter pelo menos 6 caracteres",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsResetting(true)
+    const supabase = createClient()
+
+    try {
+      // Buscar o usuário pelo email
+      const { data: profileData, error: profileError } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("email", resetEmail)
+        .single()
+
+      if (profileError || !profileData) {
+        throw new Error("Usuário não encontrado")
+      }
+
+      // Usar a API admin do Supabase para atualizar a senha
+      // Como não temos acesso direto à API admin no cliente, vamos criar uma chamada via edge function ou route handler
+      const response = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId: profileData.id,
+          newPassword: newPassword,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Erro ao atualizar senha")
+      }
 
       toast({
-        title: "Email enviado!",
-        description: "Se o e-mail existir, você receberá um link de redefinição.",
+        title: "Senha atualizada!",
+        description: "Sua senha foi alterada com sucesso. Faça login.",
+        className: "bg-green-600 text-white border-none",
       })
+
+      // Resetar o estado e fechar o dialog
       setShowForgotPassword(false)
       setResetEmail("")
+      setNewPassword("")
+      setConfirmPassword("")
+      setEmailVerified(false)
     } catch (err: unknown) {
       toast({
         title: "Erro",
-        description: err instanceof Error ? err.message : "Erro ao enviar email",
+        description: err instanceof Error ? err.message : "Erro ao redefinir senha",
         variant: "destructive",
       })
     } finally {
@@ -201,41 +310,127 @@ export default function ClientLoginPage() {
         </div>
       </motion.div>
 
-      <Dialog open={showForgotPassword} onOpenChange={setShowForgotPassword}>
+      <Dialog open={showForgotPassword} onOpenChange={(open) => {
+        setShowForgotPassword(open)
+        if (!open) {
+          // Resetar estado ao fechar
+          setEmailVerified(false)
+          setResetEmail("")
+          setNewPassword("")
+          setConfirmPassword("")
+        }
+      }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Recuperar Senha</DialogTitle>
-            <DialogDescription>Digite seu e-mail para receber um link de redefinição de senha</DialogDescription>
+            <DialogDescription>
+              {!emailVerified 
+                ? "Digite seu e-mail para verificar sua conta"
+                : "Defina sua nova senha"
+              }
+            </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleForgotPassword} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="reset-email">E-mail</Label>
-              <Input
-                id="reset-email"
-                type="email"
-                placeholder="seu@email.com"
-                required
-                value={resetEmail}
-                onChange={(e) => setResetEmail(e.target.value)}
-                className="border-white/10 bg-secondary"
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button type="button" variant="outline" onClick={() => setShowForgotPassword(false)} className="flex-1">
-                Cancelar
-              </Button>
-              <Button type="submit" className="flex-1 bg-purple-600 hover:bg-purple-700" disabled={isResetting}>
-                {isResetting ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Enviando...
-                  </>
-                ) : (
-                  "Enviar"
-                )}
-              </Button>
-            </div>
-          </form>
+          
+          {!emailVerified ? (
+            // Primeira etapa: Verificar email
+            <form onSubmit={handleVerifyEmail} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="reset-email">E-mail</Label>
+                <Input
+                  id="reset-email"
+                  type="email"
+                  placeholder="seu@email.com"
+                  required
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                  className="border-white/10 bg-secondary"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" onClick={() => setShowForgotPassword(false)} className="flex-1">
+                  Cancelar
+                </Button>
+                <Button type="submit" className="flex-1 bg-purple-600 hover:bg-purple-700" disabled={isVerifyingEmail}>
+                  {isVerifyingEmail ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Verificando...
+                    </>
+                  ) : (
+                    "Continuar"
+                  )}
+                </Button>
+              </div>
+            </form>
+          ) : (
+            // Segunda etapa: Definir nova senha
+            <form onSubmit={handleResetPassword} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="new-password">Nova Senha</Label>
+                <div className="relative">
+                  <Input
+                    id="new-password"
+                    type={showNewPassword ? "text" : "password"}
+                    placeholder="Mínimo 6 caracteres"
+                    required
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="border-white/10 bg-secondary pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="confirm-password">Confirmar Senha</Label>
+                <div className="relative">
+                  <Input
+                    id="confirm-password"
+                    type={showConfirmPassword ? "text" : "password"}
+                    placeholder="Confirme a senha"
+                    required
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="border-white/10 bg-secondary pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+              
+              <div className="flex gap-2">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => setEmailVerified(false)} 
+                  className="flex-1"
+                >
+                  Voltar
+                </Button>
+                <Button type="submit" className="flex-1 bg-purple-600 hover:bg-purple-700" disabled={isResetting}>
+                  {isResetting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Salvando...
+                    </>
+                  ) : (
+                    "Salvar Senha"
+                  )}
+                </Button>
+              </div>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
     </div>

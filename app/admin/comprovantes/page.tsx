@@ -14,7 +14,7 @@ import type { AdminVoiceCommand } from "@/app/actions/admin-voice-assistant"
 import { toast } from "sonner"
 
 export default function AdminComprovantesPage() {
-  const { transactions, clients, verifyTransaction, chargebacks, approveChargeback, isLoading } = useSupabase()
+  const { transactions, clients, verifyTransaction, rejectTransaction, chargebacks, approveChargeback, isLoading } = useSupabase()
   const [search, setSearch] = useState("")
   const [filterBrand, setFilterBrand] = useState<string>("all")
   const [filterPaymentType, setFilterPaymentType] = useState<string>("all")
@@ -115,10 +115,14 @@ export default function AdminComprovantesPage() {
     if (selectedTransaction) {
       setRejectingId(selectedTransaction.id)
       try {
-        await verifyTransaction(selectedTransaction.id, false, rejectReason)
+        await rejectTransaction(selectedTransaction.id, rejectReason)
+        toast.success("Transação rejeitada com sucesso")
         setShowRejectModal(false)
         setSelectedTransaction(null)
         setRejectReason("")
+      } catch (error) {
+        console.error("[v0] Erro ao rejeitar transação:", error)
+        toast.error("Erro ao rejeitar transação")
       } finally {
         setRejectingId(null)
       }
